@@ -7,3 +7,19 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+/*User table*/
+/*Stores the GDPR concent, verification token and if the user has verified the email*/
+model User {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email String @unique
+  password String
+  concented Boolean
+  verified Boolean @default(false)
+  verifiedAt DateTime?
+  verificationToken String?
+  verificationTokenExpiredAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt 
+}
+

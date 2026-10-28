@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "../prisma";
+import { generateVerificationTokenAndDate } from "./registerUser";
 
 export async function verifyUser(token : string) {
     const user = await prisma.user.findFirst({
@@ -30,5 +31,23 @@ export async function verifyUser(token : string) {
         return NextResponse.json({message : 'user verified'}, {status : 200})
     } catch {
         return NextResponse.json({message : 'Verification failed'}, {status : 400})
+    }
+}
+
+export async function addNewVerificationAndSend(email : string) {
+    const {token, expiryDate} = generateVerificationTokenAndDate()
+    try {
+        await prisma.user.update({
+            where : {
+                email : email
+            },
+            data : {
+                verificationToken : token,
+                verificationTokenExpiredAt : expiryDate
+            }
+        })
+        return NextResponse.json({message : 'Previous verification token expired, new email has beem sent, please verify and try again'}, {status : 400})
+    } catch {
+        return NextResponse.json({message : 'Previous verification token expired, failed to send a new token, please try again'}, {status : 400})
     }
 }

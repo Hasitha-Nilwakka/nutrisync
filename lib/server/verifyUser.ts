@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "../prisma";
-import { generateVerificationTokenAndDate } from "./registerUser";
+import { generateVerificationTokenAndDate, sendVerificationEmail } from "./registerUser";
 
 export async function verifyUser(token : string) {
     const user = await prisma.user.findFirst({
@@ -46,6 +46,9 @@ export async function addNewVerificationAndSend(email : string) {
                 verificationTokenExpiredAt : expiryDate
             }
         })
+
+        await sendVerificationEmail(email, token)
+        
         return NextResponse.json({message : 'Previous verification token expired, new email has beem sent, please verify and try again'}, {status : 400})
     } catch {
         return NextResponse.json({message : 'Previous verification token expired, failed to send a new token, please try again'}, {status : 400})

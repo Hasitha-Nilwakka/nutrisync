@@ -15,15 +15,16 @@ export async function loginUser(data : LoginFormData) {
         //No user found
         if (!user) return NextResponse.json({message : 'Email address not found, please register'}, {status : 404})
         
-        //Verification pending
-        if (user.verified === false) return NextResponse.json({message : 'Verification pending, please check email'}, {status : 400})
-        
         //verification token is expired
         //generate and send a new email
         //update the new token and expiry date
         if (user.verificationTokenExpiredAt && user.verificationTokenExpiredAt < new Date()) {
             return await addNewVerificationAndSend(data.email)
         }
+        
+        //Verification pending
+        if (user.verified === false) return NextResponse.json({message : 'Verification pending, please check email'}, {status : 400})
+        
 
         //compare password
         const isPasswordCorrect = await bcrypt.compare(data.password, user.password)

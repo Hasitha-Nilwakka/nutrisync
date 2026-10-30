@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import prisma from "../prisma";
+import prisma from "../../prisma";
 import { generateVerificationTokenAndDate, sendVerificationEmail } from "./registerUser";
 
 export async function verifyUser(token : string) {

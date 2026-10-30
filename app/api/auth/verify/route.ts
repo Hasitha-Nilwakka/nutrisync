@@ -1,4 +1,4 @@
-import { verifyUser } from '@/lib/server/verifyUser'
+import { verifyUser } from '@/lib/server/auth/verifyUser'
 import { NextRequest, NextResponse } from 'next/server'
 
 //verify the user, the request comes from email verification link

@@ -1,5 +1,5 @@
 import { registerFormSchema } from "@/lib/schemas/registerUserSchema"
-import { registerNewUser } from "@/lib/server/registerUser"
+import { registerNewUser } from "@/lib/server/auth/registerUser"
 import { NextResponse } from "next/server"
 
 export async function POST(request : Request) {

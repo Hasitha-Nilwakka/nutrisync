@@ -15,10 +15,13 @@ import { Spinner } from "@/components/ui/spinner"
 import { LoginFormData, loginUserSchema } from "@/lib/schemas/loginUserSchema"
 import { zodResolver } from "@hookform/resolvers/zod"
 import axios from "axios"
+import { useRouter } from "next/navigation"
 import { useForm, SubmitHandler } from "react-hook-form"
 
 
 export default function LoginForm() {
+    const router = useRouter()
+
     const {register, handleSubmit, reset, formState : {errors, isSubmitting}, setError} = useForm<LoginFormData>({
         resolver : zodResolver(loginUserSchema),
         defaultValues : {
@@ -34,7 +37,8 @@ export default function LoginForm() {
                 '/api/auth/login',
                 data
             )
-            alert('you are logged in')
+            router.replace("/dashboard")
+            router.refresh()
         } catch(error) {
             const message = axios.isAxiosError(error) ? error.response?.data.message : "Login failed, please try again"
             setError('root', {message : message})

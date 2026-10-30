@@ -1,4 +1,4 @@
-import { generateVerificationTokenAndDate, hashpassword } from "../lib/server/registerUser";
+import { generateVerificationTokenAndDate, hashpassword } from "../lib/server/auth/registerUser";
 import { registerFormSchema } from "../lib/schemas/registerUserSchema";
 import { describe, expect, it } from "vitest";
 

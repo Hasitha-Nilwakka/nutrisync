@@ -1,7 +1,7 @@
-import { RegisterFormData } from "../schemas/registerUserSchema";
+import { RegisterFormData } from "../../schemas/registerUserSchema";
 import bcrypt from 'bcryptjs'
 import crypto from 'node:crypto';
-import prisma from "../prisma";
+import prisma from "../../prisma";
 import { NextResponse } from "next/server";
 import nodemailer from 'nodemailer'
 import { google } from 'googleapis';

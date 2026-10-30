@@ -169,7 +169,7 @@ export async function POST() {
         //finally return the refresh token
         return {
             success : true as const,
-            refreshToken : `${newRecord.id}.${newSecretHash}`
+            refreshToken : `${newRecord.id}.${newSecret}`
         }
     })
 
@@ -181,7 +181,7 @@ export async function POST() {
                     id : session.id,
                     revokedAt : null
                 },
-                data : {revokedAt : new Date()}
+                data : {revokedAt : new Date(), lastRotatedAt : now}
             }),
             prisma.refreshToken.updateMany({
                 where : {

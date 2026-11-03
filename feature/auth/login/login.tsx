@@ -17,6 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import axios from "axios"
 import { useRouter } from "next/navigation"
 import { useForm, SubmitHandler } from "react-hook-form"
+import { SendPasswordResetVerification } from "../resetpassword/ResetPassword"
 
 
 export default function LoginForm() {
@@ -93,6 +94,7 @@ export default function LoginForm() {
                     </FieldSet>
                 </FieldGroup>
             </form>
+            <SendPasswordResetVerification/>
         </div>
     )
 }

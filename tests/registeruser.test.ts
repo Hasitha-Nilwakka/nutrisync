@@ -1,4 +1,5 @@
-import { generateVerificationTokenAndDate, hashpassword } from "../lib/server/auth/registerUser";
+import { hashpassword } from "../lib/server/auth/registerUser";
+import { generateVerificationTokenAndDate } from "../lib/server/auth/generateAndSendVerificationEmails";
 import { registerFormSchema } from "../lib/schemas/registerUserSchema";
 import { describe, expect, it } from "vitest";
 
@@ -33,11 +34,11 @@ describe("New user registration data validation", () => {
     expect(hashed).not.toBe(password)
   });
   it("Generates a verification token", () => {
-    const { token } = generateVerificationTokenAndDate()
+    const { token } = generateVerificationTokenAndDate('user')
     expect(token).toMatch(/^[a-f0-9]{64}$/)
   });
   it("Generates a future expiry date", () => {
-    const { expiryDate } = generateVerificationTokenAndDate()
+    const { expiryDate } = generateVerificationTokenAndDate('user')
     expect(expiryDate.getTime()).toBeGreaterThan(Date.now())
   });
 });

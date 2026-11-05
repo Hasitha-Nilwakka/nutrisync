@@ -71,7 +71,7 @@ export async function sendVerificationEmail(email : string, token : string, toke
         to : email,
         subject : 'Please click the link below to complete your password reset',
         text : `Please click the link`,
-        html : `<a href="${baseUrl}/api/auth/verify?token=${token}">Reset Password</a>`
+        html : `<a href="${baseUrl}/resetpassword?token=${token}">Reset Password</a>`
     }
 
     const mailOptions = tokenType === 'user' ? userVerificationEmail : passwordResetEmail

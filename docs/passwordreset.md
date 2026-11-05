@@ -1,0 +1,31 @@
+#Resetting password
+
+##OP flow
+
+requesting a verification link
+1. Send password reset verification ui ->
+2. call api/auth/passwordreset ->
+3. route.ts POST() call from frontend with emailid ->
+4. pass the email to passwordreset server file and handle the operation ->
+5. send the response to route and forward to fronetend
+6. show the outcome - this can be implemented later, for now show alert -> reroute to home page
+
+actual verification
+1. user click the email
+2. call api/auth/resetpassword GET()
+3. get the token from url
+4. pass to passwordreset server file
+5. validate -> success -> return the token along with the response
+6. route.ts forward the token and reroute to actual password change screen /new-password?token=token
+6. fail -> return relevant message
+
+password change
+1. the ui at /new-password get the token from url
+2. validate the password and confirm password with zod
+3. use RHF for form validation
+4. on submit call api/auth/resetpassword POST and pass newPassword & token
+5. record changes in db and and validate return to login screen
+
+what will be left to do
+Proper ui
+alerts

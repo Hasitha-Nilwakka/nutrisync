@@ -1,9 +1,9 @@
-"use server"
 import { NextResponse } from "next/server";
 import { generateVerificationTokenAndDate, sendVerificationEmail } from "./generateAndSendVerificationEmails";
 import prisma from "@/lib/prisma";
 import { addNewVerificationAndSend } from "./verifyUser";
 
+//send the password reset link
 export async function sendPasswordResetLink(email : string) {
     try {
         const {token, expiryDate} = generateVerificationTokenAndDate('password')
@@ -32,7 +32,9 @@ export async function sendPasswordResetLink(email : string) {
         const tooManyAttempts = await tooManyResetAttempts(user.id)
         //if toomany attempts revoke previous verification
         if (tooManyAttempts) {
-            revokeLastPreviousAttempts(user.id)
+            return NextResponse.json({message : 'Too many password reset attempts, please try again later'}, {status : 429})
+        } else {
+            await revokeLastPreviousAttempts(user.id)
         }
         //save the token
         await prisma.$transaction([
@@ -80,8 +82,3 @@ async function revokeLastPreviousAttempts(userId : string) {
         }
     })
 }
-
-//Verification flow
-//check the validity, and its not revoked
-//if valid validate -> mark veryfied true, revoke move to reset screen
-//if not ask to send new verification

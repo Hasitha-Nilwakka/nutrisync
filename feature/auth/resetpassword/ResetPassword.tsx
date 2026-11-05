@@ -13,11 +13,11 @@ import {
 import { Field, FieldError, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { sendPasswordResetLink } from "@/lib/server/auth/passwordreset"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { SubmitHandler, useForm } from "react-hook-form"
 import z from "zod"
 import { useRouter } from "next/navigation"
+import axios from "axios"
 
 const emailSchema = z.object({
     emailReset : z.string().trim().min(1, 'Email address is required').email('Invalid email address format')
@@ -36,12 +36,16 @@ export function SendPasswordResetVerification() {
 
     const onSubmit : SubmitHandler<EmailSchema> = async(data) => {
         try {
-            await sendPasswordResetLink(data.emailReset)
+            await axios.post(
+                '/api/auth/passwordreset'
+                ,data.emailReset
+            )
             router.replace('/')
             router.refresh()
         } catch {
-            console.log('error')
+            alert('something went wrong')
         }
+
     }
   return (
     <Dialog disablePointerDismissal onOpenChange={() => clearErrors('emailReset')}>

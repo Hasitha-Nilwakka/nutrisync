@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { clearAuthCookies } from "@/lib/server/auth/cookies";
+import { hashRefreshTokenSecret } from "@/lib/server/auth/tokens";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -17,11 +18,20 @@ export async function POST() {
 
             if (separator > 0 && separator < fullRefreshToken.length - 1) {
                 const tokenId = fullRefreshToken.slice(0, separator);
-
+                const secret = hashRefreshTokenSecret(fullRefreshToken.slice(separator + 1))
                 const storedToken = await prisma.refreshToken.findUnique({
                     where: { id: tokenId },
-                    select: { sessionId: true }
+                    select: { sessionId: true, tokenHash : true }
                 });
+
+
+                //secrets do not match
+                if (secret !== storedToken?.tokenHash) {
+                    return NextResponse.json(
+                        { message: "Logged out locally, but server-side revocation may have failed." },
+                        { status: 500 }
+                    );
+                }
 
                 if (storedToken) {
                     const now = new Date();

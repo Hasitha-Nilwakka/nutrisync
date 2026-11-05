@@ -22,7 +22,6 @@ import { SendPasswordResetVerification } from "../resetpassword/ResetPassword"
 
 export default function LoginForm() {
     const router = useRouter()
-
     const {register, handleSubmit, reset, formState : {errors, isSubmitting}, setError} = useForm<LoginFormData>({
         resolver : zodResolver(loginUserSchema),
         defaultValues : {

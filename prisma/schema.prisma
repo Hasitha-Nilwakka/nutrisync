@@ -76,4 +76,6 @@ model PasswordReset {
   revokedAt               DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([verificationToken])
 }

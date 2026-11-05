@@ -19,7 +19,7 @@ import { SubmitHandler, useForm } from "react-hook-form"
 import z from "zod"
 import { useRouter } from "next/navigation"
 import axios from "axios"
-import { showToast } from "@/components/ui/showToast"
+import { showAPIResponseToast } from "@/components/ui/showToast"
 
 const emailSchema = z.object({
     emailReset : z.string().trim().min(1, 'Email address is required').email('Invalid email address format')
@@ -42,13 +42,13 @@ export function SendPasswordResetVerification() {
                 '/api/auth/passwordreset'
                 ,{emailReset : data.emailReset}
             )
-            showToast(response.data)
+            showAPIResponseToast(response.data)
             router.replace('/')
             router.refresh()
         } catch(err) {
             if(axios.isAxiosError(err) && err.response) {
                 console.log(err)
-                showToast(err.response.data)
+                showAPIResponseToast(err.response.data)
             }
         }
 

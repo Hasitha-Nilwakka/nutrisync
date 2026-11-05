@@ -1,9 +1,9 @@
 import { Icon } from "next/dist/lib/metadata/types/metadata-types"
+import { NextResponse } from "next/server";
 
 export interface APIResponse<T = unknown> {
     type : 'success' | 'error' | 'info',
     icon : Icon,
-    status : number,
     message : string,
     title : string,
     data?: T
@@ -18,7 +18,7 @@ export interface Options<T> {
 }
 
 export class generateResponse {
-    static success<T = unknown>(options : Options<T> = {}) : APIResponse<T> {
+    static success<T = unknown>(options : Options<T> = {}) : NextResponse<APIResponse> {
         const {
             message = 'Operation successfull',
             status = 200,
@@ -26,17 +26,16 @@ export class generateResponse {
             title  = 'Completed',
             data
         } = options
-        return {
+        return NextResponse.json({
             type : 'success',
             message : `${message} ${icon}`,
             icon : icon,
             title : title,
-            status : status,
             ...(data !== undefined && { data }),
-        }
+        }, {status : status})
     }
 
-    static info<T = unknown>(options : Options<T> = {}) : APIResponse<T> {
+    static info<T = unknown>(options : Options<T> = {}) : NextResponse<APIResponse>  {
         const {
             message = 'Action required',
             status = 200,
@@ -44,17 +43,16 @@ export class generateResponse {
             title  = 'Info',
             data
         } = options
-        return {
+        return NextResponse.json({
             type : 'info',
             message : `${message} ${icon}`,
             icon : icon,
             title : title,
-            status : status,
             ...(data !== undefined && { data }),
-        }
+        }, {status : status})
     }
 
-    static networkError<T = unknown>(options : Options<T> = {}) : APIResponse<T> {
+    static networkError<T = unknown>(options : Options<T> = {}) : NextResponse<APIResponse> {
         const {
             message = 'Network error. Please try again later.',
             status = 503,
@@ -62,17 +60,16 @@ export class generateResponse {
             title  = 'Network error',
             data
         } = options
-        return {
+        return NextResponse.json({
             type : 'error',
             message : `${message} ${icon}`,
             icon : icon,
             title : title,
-            status : status,
             ...(data !== undefined && { data }),
-        }
+        }, {status : status})
     }
 
-    static internalServerError<T = unknown>(options : Options<T> = {}) : APIResponse<T> {
+    static internalServerError<T = unknown>(options : Options<T> = {}) : NextResponse<APIResponse> {
         const {
             message = 'Server error. Please try again later.',
             status = 500,
@@ -80,17 +77,16 @@ export class generateResponse {
             title  = 'Internal error',
             data
         } = options
-        return {
+        return NextResponse.json({
             type : 'error',
             message : `${message} ${icon}`,
             icon : icon,
             title : title,
-            status : status,
             ...(data !== undefined && { data }),
-        }
+        }, {status : status})
     }
 
-    static clientError<T = unknown>(options : Options<T> = {}) : APIResponse<T> {
+    static clientError<T = unknown>(options : Options<T> = {}) : NextResponse<APIResponse>  {
         const {
             message = 'An error occured',
             status = 400,
@@ -98,13 +94,12 @@ export class generateResponse {
             title  = 'Error',
             data
         } = options
-        return {
+        return NextResponse.json({
             type : 'error',
             message : `${message} ${icon}`,
             icon : icon,
             title : title,
-            status : status,
             ...(data !== undefined && { data }),
-        }
+        }, {status : status})
     }
 }

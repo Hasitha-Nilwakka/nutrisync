@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { generateVerificationTokenAndDate, sendVerificationEmail } from "./generateAndSendVerificationEmails";
 import prisma from "@/lib/prisma";
 import { addNewVerificationAndSend } from "./verifyUser";
@@ -22,25 +21,25 @@ export async function sendPasswordResetLink(email : string) {
         })
         //user not found
         if (!user) {
-            return NextResponse.json(generateResponse.clientError({
+            return generateResponse.clientError({
                 message : 'Email address is not registered',
                 title : 'Unauthorized action'
-            }))
+            })
         } 
 
         //check if the user is verified and verification token is valid
         if (!user.verified) {
             if (user.verificationTokenExpiredAt && user.verificationTokenExpiredAt < new Date()) {
                 await addNewVerificationAndSend(email)
-                return NextResponse.json(generateResponse.info({
+                return generateResponse.info({
                     message : 'User account verification pending and expired, new verification send',
                     title : 'User account not verified'
-                    }))
+                    })
             }
-            return NextResponse.json(generateResponse.info({
+            return generateResponse.info({
                     message : 'You account is not verified, please verify the account',
                     title : 'Account not verified'
-                    }))
+                    })
         }
 
         //check previous attempts
@@ -48,11 +47,11 @@ export async function sendPasswordResetLink(email : string) {
         const tooManyAttempts = await tooManyResetAttempts(user.id)
         //if toomany attempts revoke previous verification
         if (tooManyAttempts) {
-            return NextResponse.json(generateResponse.clientError({
+            return generateResponse.clientError({
                 message : 'Too many password reset attempts, please try again later',
                 title : 'Action restricted',
                 status : 429
-            }))
+            })
         } else {
             stage = 'revoking previous reset tokens'
             await revokeLastPreviousAttempts(user.id)
@@ -74,19 +73,19 @@ export async function sendPasswordResetLink(email : string) {
             })
         ])
 
-        return NextResponse.json(generateResponse.success({
+        return generateResponse.success({
             title : 'Email sent',
             message : 'Verification email sent, please check your email'
-        }))
+        })
     } catch (error) {
         console.error(
             `Password reset failed during ${stage}:`,
             error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error'
         )
-        return NextResponse.json(generateResponse.internalServerError({
+        return generateResponse.internalServerError({
             title : 'Error occured',
             message : 'Failed to send the email, Please try again'
-        }))
+        })
     }
 }
 
@@ -116,4 +115,51 @@ async function revokeLastPreviousAttempts(userId : string) {
             revokedAt : new Date
         }
     })
+}
+
+//authenticate the user verification request
+export async function verifyResetRequest(token : string) {
+    if (token) {
+        return generateResponse.internalServerError()
+    }
+
+    try {
+        //check for matching taoken
+        const resetAttempt = await prisma.passwordReset.findFirst({
+            where : {
+                verificationToken : token
+            }
+        })
+
+        //token not found
+        if (!resetAttempt) {
+            return generateResponse.clientError({message : "Unauthorized action"})
+        }
+
+        //token expired
+        if (resetAttempt.verificationTokenExpiry < new Date()) {
+            return generateResponse.clientError({
+                message : "Token has expired, please send a new request from the home page", 
+                title : "Token expired"
+            })
+        }
+
+        //token revoked
+        if (resetAttempt.revokedAt !== null) {
+            return generateResponse.clientError({
+                message : "Token has revoked for security reasons, please send a new request from the home page", 
+                title : "Token revoked"
+            })
+        }
+
+        //all checks passed verify the request
+        //pass the token to change password UI, changes to db will happen once the actual password change is recorded
+        return generateResponse.success({
+            title : "Verification successful",
+            message : "Redirecting to password change screen",
+            data : token
+        })
+    } catch {
+        return generateResponse.internalServerError()
+    }
 }

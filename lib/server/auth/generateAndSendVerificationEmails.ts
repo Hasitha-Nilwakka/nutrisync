@@ -39,22 +39,22 @@ export function generateVerificationTokenAndDate(tokenType : tokenType) {
 
 //send the verification email
 export async function sendVerificationEmail(email : string, token : string, tokenType : tokenType) {
-    const accessTokenResponse = await oAuth2Client.getAccessToken();
+    /*const accessTokenResponse = await oAuth2Client.getAccessToken();
     const accessToken = accessTokenResponse?.token;
 
     if (!accessToken) {
       throw new Error("Failed to retrieve an OAuth access token.");
-    }
+    }*/
 
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        type: 'OAuth2',
         user: process.env.EMAIL_USER,
-        clientId: process.env.OAUTH_CLIENT_ID,
+        pass : process.env.EMAIL_APP_PASSWORD,
+        /*clientId: process.env.OAUTH_CLIENT_ID,
         clientSecret: process.env.OAUTH_CLIENT_SECRET,
         refreshToken: process.env.OAUTH_REFRESH_TOKEN,
-        accessToken: accessToken,
+        accessToken: accessToken,*/
       },
     });
 
@@ -71,7 +71,7 @@ export async function sendVerificationEmail(email : string, token : string, toke
         to : email,
         subject : 'Please click the link below to complete your password reset',
         text : `Please click the link`,
-        html : `<a href="${baseUrl}/resetpassword?token=${token}">Reset Password</a>`
+        html : `<a href="${baseUrl}/api/auth/passwordreset?token=${token}">Reset Password</a>`
     }
 
     const mailOptions = tokenType === 'user' ? userVerificationEmail : passwordResetEmail

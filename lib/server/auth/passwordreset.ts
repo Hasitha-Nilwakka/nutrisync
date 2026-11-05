@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { generateVerificationTokenAndDate, sendVerificationEmail } from "./generateAndSendVerificationEmails";
 import prisma from "@/lib/prisma";
 import { addNewVerificationAndSend } from "./verifyUser";
+import { generateResponse } from "../response/generateResponse";
 
 //send the password reset link
 export async function sendPasswordResetLink(email : string) {
+    let stage = 'database lookup'
     try {
         const {token, expiryDate} = generateVerificationTokenAndDate('password')
         //check the user exists
@@ -18,25 +20,50 @@ export async function sendPasswordResetLink(email : string) {
                 verificationTokenExpiredAt : true
             }
         })
-        if (!user) return NextResponse.json({message : 'Email address is not registered, please check again'}, {status : 401})
+        //user not found
+        if (!user) {
+            return NextResponse.json(generateResponse.clientError({
+                message : 'Email address is not registered',
+                title : 'Unauthorized action'
+            }))
+        } 
+
         //check if the user is verified and verification token is valid
         if (!user.verified) {
             if (user.verificationTokenExpiredAt && user.verificationTokenExpiredAt < new Date()) {
                 await addNewVerificationAndSend(email)
-                return NextResponse.json({message : 'User account verification pending and expired, new verification send'}, {status : 400})    
+                return NextResponse.json(generateResponse.info({
+                    message : 'User account verification pending and expired, new verification send',
+                    title : 'User account not verified'
+                    }))
             }
-            return NextResponse.json({message : 'User account verification pending'}, {status : 400})
+            return NextResponse.json(generateResponse.info({
+                    message : 'You account is not verified, please verify the account',
+                    title : 'Account not verified'
+                    }))
         }
 
         //check previous attempts
+        stage = 'checking password reset attempts'
         const tooManyAttempts = await tooManyResetAttempts(user.id)
         //if toomany attempts revoke previous verification
         if (tooManyAttempts) {
-            return NextResponse.json({message : 'Too many password reset attempts, please try again later'}, {status : 429})
+            return NextResponse.json(generateResponse.clientError({
+                message : 'Too many password reset attempts, please try again later',
+                title : 'Action restricted',
+                status : 429
+            }))
         } else {
+            stage = 'revoking previous reset tokens'
             await revokeLastPreviousAttempts(user.id)
         }
+
+        //send email
+        stage = 'sending reset email'
+        await sendVerificationEmail(email, token, 'password')
+        
         //save the token
+        stage = 'saving reset token'
         await prisma.$transaction([
             prisma.passwordReset.create({
                 data : {
@@ -46,12 +73,20 @@ export async function sendPasswordResetLink(email : string) {
                 }
             })
         ])
-        //send email
-        await sendVerificationEmail(email, token, 'password')
 
-        return NextResponse.json({message :"Verification send"}, {status : 200})
-    } catch {
-        return NextResponse.json({message : 'Failed to send verification'}, {status : 500})
+        return NextResponse.json(generateResponse.success({
+            title : 'Email sent',
+            message : 'Verification email sent, please check your email'
+        }))
+    } catch (error) {
+        console.error(
+            `Password reset failed during ${stage}:`,
+            error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error'
+        )
+        return NextResponse.json(generateResponse.internalServerError({
+            title : 'Error occured',
+            message : 'Failed to send the email, Please try again'
+        }))
     }
 }
 

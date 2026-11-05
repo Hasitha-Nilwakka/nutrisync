@@ -1,6 +1,7 @@
 //POST -> verify token
 
 import { sendPasswordResetLink } from "@/lib/server/auth/passwordreset";
+import { generateResponse } from "@/lib/server/response/generateResponse";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -16,7 +17,7 @@ export async function POST(request : NextRequest) {
             return response
         }
     } catch {
-        return NextResponse.json({message : 'something went wrong'}, {status : 400})
+        return NextResponse.json(generateResponse.internalServerError())
     }
 }
 

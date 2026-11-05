@@ -1,3 +1,4 @@
+//send the reset verification link to user
 "use client"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +19,7 @@ import { SubmitHandler, useForm } from "react-hook-form"
 import z from "zod"
 import { useRouter } from "next/navigation"
 import axios from "axios"
+import { showToast } from "@/components/ui/showToast"
 
 const emailSchema = z.object({
     emailReset : z.string().trim().min(1, 'Email address is required').email('Invalid email address format')
@@ -36,14 +38,18 @@ export function SendPasswordResetVerification() {
 
     const onSubmit : SubmitHandler<EmailSchema> = async(data) => {
         try {
-            await axios.post(
+            const response = await axios.post(
                 '/api/auth/passwordreset'
-                ,data.emailReset
+                ,{emailReset : data.emailReset}
             )
+            showToast(response.data)
             router.replace('/')
             router.refresh()
-        } catch {
-            alert('something went wrong')
+        } catch(err) {
+            if(axios.isAxiosError(err) && err.response) {
+                console.log(err)
+                showToast(err.response.data)
+            }
         }
 
     }

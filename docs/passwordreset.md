@@ -3,11 +3,11 @@
 ##OP flow
 
 requesting a verification link
-1. Send password reset verification ui ->
-2. call api/auth/passwordreset ->
-3. route.ts POST() call from frontend with emailid ->
-4. pass the email to passwordreset server file and handle the operation ->
-5. send the response to route and forward to fronetend
+1. Send password reset verification ui -> Done
+2. call api/auth/passwordreset -> Done
+3. route.ts POST() call from frontend with emailid -> Done
+4. pass the email to passwordreset server file and handle the operation -> Done
+5. send the response to route and forward to fronetend Done
 6. show the outcome - this can be implemented later, for now show alert -> reroute to home page
 
 actual verification

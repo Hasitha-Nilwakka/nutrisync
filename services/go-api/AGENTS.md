@@ -1,7 +1,8 @@
 ##Architechture
 -This folder contains the Authentication and Go API service
 -The server runs on port 8080
--The database in use is PostreSQL, its managed through the prisma schema
+-The database in use is PostreSQL, managed via GORM (gorm.io/gorm and gorm.io/driver/postgres).
+-Database models and AutoMigrate live in services/go-api/models and services/go-api/database.
 -The prisma scehma is managed at /prisma/schema.prisma
 
 ##Code quality

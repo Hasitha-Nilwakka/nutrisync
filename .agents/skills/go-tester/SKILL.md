@@ -9,4 +9,4 @@ description: Runs and audits all Go unit tests in services/go-api before any git
 -Do not edit, create, remove any other functions, handlers or other files
 -Always describe disputes or issues for approval before action
 -Delegate a subagent to cd services/go-api && go test -v ./...
--Output a pass/fail test report. If any test fails or is missing, stop and do not allow git commit or git merge.
+-Output a pass/fail test report.

@@ -1,6 +1,6 @@
 //POST -> verify token
 
-import { sendPasswordResetLink, verifyResetRequest } from "@/lib/server/auth/passwordreset";
+import { createNewPassword, sendPasswordResetLink, verifyResetRequest } from "@/lib/server/auth/passwordreset";
 import { generateResponse } from "@/lib/server/response/generateResponse";
 import { NextRequest } from "next/server";
 import { redirect } from "next/navigation";
@@ -10,7 +10,13 @@ import { redirect } from "next/navigation";
 export async function POST(request : NextRequest) {
     try {
         const body = await request.json()
-        const {emailReset} = body
+        const {emailReset, token, newPassword} = body
+
+        //creating new password
+        if (token && newPassword) {
+            const response = await createNewPassword(token, newPassword)
+            return response
+        }
 
         //sending the email verification
         if (emailReset) {

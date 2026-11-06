@@ -2,6 +2,7 @@ import { generateVerificationTokenAndDate, sendVerificationEmail } from "./gener
 import prisma from "@/lib/prisma";
 import { addNewVerificationAndSend } from "./verifyUser";
 import { generateResponse } from "../response/generateResponse";
+import { hashpassword } from "./registerUser";
 
 //send the password reset link
 export async function sendPasswordResetLink(email : string) {
@@ -119,7 +120,7 @@ async function revokeLastPreviousAttempts(userId : string) {
 
 //authenticate the user verification request
 export async function verifyResetRequest(token : string) {
-    if (token) {
+    if (!token) {
         return generateResponse.internalServerError()
     }
 
@@ -158,6 +159,64 @@ export async function verifyResetRequest(token : string) {
             title : "Verification successful",
             message : "Redirecting to password change screen",
             data : token
+        })
+    } catch {
+        return generateResponse.internalServerError()
+    }
+}
+
+//create new password
+export async function createNewPassword(token : string, newPassword : string) {
+    try {
+        const hashedPassword = await hashpassword(newPassword)
+
+        await prisma.$transaction(async(tx) => {
+            //get the user id
+            const user = await tx.passwordReset.findFirst({
+                where : {
+                    verificationToken : token
+                },
+                select : {
+                    userId : true,
+                    id : true
+                }
+            })
+
+            //update the password
+            await tx.user.update({
+                where : {
+                    id : user?.userId
+                },
+                data : {
+                    password : hashedPassword
+                }
+            })
+
+            //update the successful reset attempt
+            await tx.passwordReset.update({
+                where : {
+                    verificationToken : token,
+                    id : user?.id
+                },
+                data : {
+                    verified : true
+                }
+            })
+
+            //revoke all tokens for the user to ensure they are not reused
+            await tx.passwordReset.updateMany({
+                where : {
+                    userId : user?.userId
+                },
+                data : {
+                    revokedAt : new Date()
+                }
+            })
+        })
+
+        return generateResponse.success({
+            title : 'Password changed',
+            message : 'You can now login, redirecting to login page'
         })
     } catch {
         return generateResponse.internalServerError()

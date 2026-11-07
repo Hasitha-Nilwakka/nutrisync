@@ -75,11 +75,10 @@ func (mockSender *mockVerificationEmailSender) SendRegistrationVerificationEmail
 // TestValidateUserRegistrationRequestPayloadRejectsInvalidInputs verifies all validation rules on UserRegistrationRequestPayload.
 func TestValidateUserRegistrationRequestPayloadRejectsInvalidInputs(testingInstance *testing.T) {
 	invalidPayloads := []UserRegistrationRequestPayload{
-		{Email: "not-an-email", ConfirmEmail: "not-an-email", Password: "password123", ConfirmPassword: "password123", Consented: true},
-		{Email: "user@example.com", ConfirmEmail: "other@example.com", Password: "password123", ConfirmPassword: "password123", Consented: true},
-		{Email: "user@example.com", ConfirmEmail: "user@example.com", Password: "short", ConfirmPassword: "short", Consented: true},
-		{Email: "user@example.com", ConfirmEmail: "user@example.com", Password: "password123", ConfirmPassword: "different123", Consented: true},
-		{Email: "user@example.com", ConfirmEmail: "user@example.com", Password: "password123", ConfirmPassword: "password123", Consented: false, Concented: false},
+		{Email: "not-an-email", ConfirmEmail: "not-an-email", Password: "password123", ConfirmPassword: "password123"},
+		{Email: "user@example.com", ConfirmEmail: "other@example.com", Password: "password123", ConfirmPassword: "password123"},
+		{Email: "user@example.com", ConfirmEmail: "user@example.com", Password: "short", ConfirmPassword: "short"},
+		{Email: "user@example.com", ConfirmEmail: "user@example.com", Password: "password123", ConfirmPassword: "different123"},
 	}
 
 	for index, payload := range invalidPayloads {
@@ -102,7 +101,6 @@ func TestHandleUserRegistrationRequestCreatesUnverifiedUserAndSendsVerificationE
 		ConfirmEmail:    "newuser@example.com",
 		Password:        "StrongPass123!",
 		ConfirmPassword: "StrongPass123!",
-		Consented:       true,
 	})
 
 	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(requestBody))
@@ -125,6 +123,10 @@ func TestHandleUserRegistrationRequestCreatesUnverifiedUserAndSendsVerificationE
 
 	if mockRepository.createdUser == nil || mockRepository.createdUser.Email != "newuser@example.com" {
 		testingInstance.Fatalf("expected unverified user to be created in repository, got %+v", mockRepository.createdUser)
+	}
+
+	if mockRepository.createdUser.Consented {
+		testingInstance.Error("expected newly registered user to start with Consented == false")
 	}
 
 	if mockEmailSender.sentRecipientEmail != "newuser@example.com" || mockEmailSender.sentToken == "" {

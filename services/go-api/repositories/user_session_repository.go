@@ -12,7 +12,7 @@ import (
 )
 
 // UserSessionRepository defines the persistence operations required for user login,
-// refresh token rotation, reuse detection, and session revocation.
+// refresh token rotation, reuse detection, session revocation, and GDPR consent management.
 type UserSessionRepository interface {
 	FindUserByEmailForLogin(ctx context.Context, email string) (*models.User, error)
 	CreateSessionWithInitialRefreshToken(ctx context.Context, session *models.Session, initialRefreshToken *models.RefreshToken) error
@@ -20,6 +20,8 @@ type UserSessionRepository interface {
 	RotateRefreshTokenInTransaction(ctx context.Context, currentTokenID string, newRefreshToken *models.RefreshToken) error
 	RevokeSessionAndAllRefreshTokens(ctx context.Context, sessionID string) error
 	FindSessionByID(ctx context.Context, sessionID string) (*models.Session, error)
+	AcceptUserGDPRConsent(ctx context.Context, userID string) error
+	DeleteUnconsentedUserAndAccounts(ctx context.Context, userID string) error
 }
 
 // TwoFactorRepository defines the persistence operations required for configuring, enabling,
@@ -220,6 +222,8 @@ func (repository *GormUserSessionRepository) FindSessionByID(
 
 	var sessionRecord models.Session
 	queryResult := repository.databaseConnection.WithContext(ctx).
+		Preload("User").
+		Preload("User.HealthProfile").
 		Where("id = ?", trimmedSessionID).
 		First(&sessionRecord)
 	if queryResult.Error != nil {
@@ -230,6 +234,76 @@ func (repository *GormUserSessionRepository) FindSessionByID(
 	}
 
 	return &sessionRecord, nil
+}
+
+// AcceptUserGDPRConsent sets consented = true on the User record identified by userID.
+func (repository *GormUserSessionRepository) AcceptUserGDPRConsent(
+	ctx context.Context,
+	userID string,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return errors.New("user ID must not be empty")
+	}
+
+	return repository.databaseConnection.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", trimmedUserID).
+		Update("consented", true).Error
+}
+
+// DeleteUnconsentedUserAndAccounts verifies inside a GORM transaction that the user currently has consented == false,
+// and deletes all associated Account, RefreshToken, Session, and User records for userID.
+func (repository *GormUserSessionRepository) DeleteUnconsentedUserAndAccounts(
+	ctx context.Context,
+	userID string,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return errors.New("user ID must not be empty")
+	}
+
+	return repository.databaseConnection.WithContext(ctx).Transaction(func(transactionDB *gorm.DB) error {
+		var userRecord models.User
+		if lookupError := transactionDB.Where("id = ?", trimmedUserID).First(&userRecord).Error; lookupError != nil {
+			return lookupError
+		}
+
+		if userRecord.Consented {
+			return errors.New("cannot delete user via unconsented flow after consent has already been granted")
+		}
+
+		if deleteAccountsErr := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.Account{}).Error; deleteAccountsErr != nil {
+			return deleteAccountsErr
+		}
+
+		sessionIDSubQuery := transactionDB.Model(&models.Session{}).Select("id").Where("user_id = ?", trimmedUserID)
+		if deleteTokensErr := transactionDB.Where("session_id IN (?)", sessionIDSubQuery).Delete(&models.RefreshToken{}).Error; deleteTokensErr != nil {
+			return deleteTokensErr
+		}
+
+		if deleteSessionsErr := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.Session{}).Error; deleteSessionsErr != nil {
+			return deleteSessionsErr
+		}
+
+		if deletePasswordResetsErr := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.PasswordReset{}).Error; deletePasswordResetsErr != nil {
+			return deletePasswordResetsErr
+		}
+
+		if deleteUserErr := transactionDB.Where("id = ?", trimmedUserID).Delete(&models.User{}).Error; deleteUserErr != nil {
+			return deleteUserErr
+		}
+
+		return nil
+	})
 }
 
 // SetPendingTwoFactorSecret stores a newly generated TOTP secret in two_factor_pending_secret for the given userID.

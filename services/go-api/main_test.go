@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/oauth2"
@@ -33,6 +35,12 @@ func (stubMainSessionRepository) RevokeSessionAndAllRefreshTokens(ctx context.Co
 }
 func (stubMainSessionRepository) FindSessionByID(ctx context.Context, sessionID string) (*models.Session, error) {
 	return nil, nil
+}
+func (stubMainSessionRepository) AcceptUserGDPRConsent(ctx context.Context, userID string) error {
+	return nil
+}
+func (stubMainSessionRepository) DeleteUnconsentedUserAndAccounts(ctx context.Context, userID string) error {
+	return nil
 }
 
 type stubMainAccountRepository struct{}
@@ -137,5 +145,42 @@ func TestCreateApplicationMuxRegistersHealthRegistrationAndSessionRoutes(testing
 		if recorder.Code != route.expectedStatus {
 			testingInstance.Errorf("expected route %s %s to return %d, got %d", route.method, route.path, route.expectedStatus, recorder.Code)
 		}
+	}
+}
+
+func TestLoadDotEnvFileIfPresentParsesKeyValuesAndPreservesExistingEnv(testingInstance *testing.T) {
+	tempDir := testingInstance.TempDir()
+	dotEnvPath := filepath.Join(tempDir, ".env")
+
+	dotEnvContents := `
+# Comment line to ignore
+TEST_DOTENV_NEW_KEY = "loaded-from-dotenv"
+TEST_DOTENV_SINGLE_QUOTED='single-quoted-value'
+TEST_DOTENV_EXISTING_KEY=should-not-overwrite
+`
+	if writeErr := os.WriteFile(dotEnvPath, []byte(dotEnvContents), 0600); writeErr != nil {
+		testingInstance.Fatalf("failed to write temporary .env file: %v", writeErr)
+	}
+
+	_ = os.Unsetenv("TEST_DOTENV_NEW_KEY")
+	_ = os.Unsetenv("TEST_DOTENV_SINGLE_QUOTED")
+	testingInstance.Setenv("TEST_DOTENV_EXISTING_KEY", "already-set")
+	testingInstance.Cleanup(func() {
+		_ = os.Unsetenv("TEST_DOTENV_NEW_KEY")
+		_ = os.Unsetenv("TEST_DOTENV_SINGLE_QUOTED")
+	})
+
+	LoadDotEnvFileIfPresent(filepath.Join(tempDir, "nonexistent.env"), dotEnvPath)
+
+	if got := os.Getenv("TEST_DOTENV_NEW_KEY"); got != "loaded-from-dotenv" {
+		testingInstance.Errorf("expected TEST_DOTENV_NEW_KEY to be %q, got %q", "loaded-from-dotenv", got)
+	}
+
+	if got := os.Getenv("TEST_DOTENV_SINGLE_QUOTED"); got != "single-quoted-value" {
+		testingInstance.Errorf("expected TEST_DOTENV_SINGLE_QUOTED to be %q, got %q", "single-quoted-value", got)
+	}
+
+	if got := os.Getenv("TEST_DOTENV_EXISTING_KEY"); got != "already-set" {
+		testingInstance.Errorf("expected TEST_DOTENV_EXISTING_KEY to remain %q, got %q", "already-set", got)
 	}
 }

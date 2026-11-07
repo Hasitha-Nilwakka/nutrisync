@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -15,6 +16,55 @@ import (
 	"nutrysync/go-api/handlers"
 	"nutrysync/go-api/repositories"
 )
+
+// LoadDotEnvFileIfPresent reads one or more .env files (if present), ignores blank lines and '#' comments,
+// parses KEY=VALUE pairs (stripping optional surrounding quotes), and populates os.Setenv only when os.Getenv(key) is currently empty.
+func LoadDotEnvFileIfPresent(filePaths ...string) {
+	for _, rawFilePath := range filePaths {
+		trimmedFilePath := strings.TrimSpace(rawFilePath)
+		if trimmedFilePath == "" {
+			continue
+		}
+
+		envFile, openError := os.Open(trimmedFilePath)
+		if openError != nil {
+			continue
+		}
+
+		scanner := bufio.NewScanner(envFile)
+		for scanner.Scan() {
+			trimmedLine := strings.TrimSpace(scanner.Text())
+			if trimmedLine == "" || strings.HasPrefix(trimmedLine, "#") {
+				continue
+			}
+
+			trimmedLine = strings.TrimSpace(strings.TrimPrefix(trimmedLine, "export "))
+			separatorIndex := strings.Index(trimmedLine, "=")
+			if separatorIndex <= 0 {
+				continue
+			}
+
+			key := strings.TrimSpace(trimmedLine[:separatorIndex])
+			value := strings.TrimSpace(trimmedLine[separatorIndex+1:])
+			if key == "" {
+				continue
+			}
+
+			if len(value) >= 2 {
+				if (strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`)) ||
+					(strings.HasPrefix(value, `'`) && strings.HasSuffix(value, `'`)) {
+					value = value[1 : len(value)-1]
+				}
+			}
+
+			if strings.TrimSpace(os.Getenv(key)) == "" {
+				_ = os.Setenv(key, value)
+			}
+		}
+
+		_ = envFile.Close()
+	}
+}
 
 // handleServiceHealthCheck writes the JSON health check status response for GET /health.
 func handleServiceHealthCheck(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +99,7 @@ func CreateApplicationMux(
 		mux.HandleFunc("POST /api/auth/refresh", userSessionHandler.HandleRefreshTokenRotationRequest)
 		mux.HandleFunc("POST /api/auth/logout", userSessionHandler.HandleUserLogoutRequest)
 		mux.HandleFunc("GET /api/auth/session", userSessionHandler.HandleVerifyActiveSessionRequest)
+		mux.HandleFunc("POST /api/auth/consent", userSessionHandler.HandleUserGDPRConsentRequest)
 	}
 
 	for _, candidateHandler := range oauthHandlers {
@@ -70,6 +121,17 @@ func CreateApplicationMux(
 				mux.HandleFunc("POST /api/auth/2fa/disable", typedHandler.HandleTwoFactorDisableRequest)
 				mux.HandleFunc("POST /api/auth/2fa/login-verify", typedHandler.HandleTwoFactorLoginVerifyRequest)
 			}
+		case *handlers.HealthProfileHandler:
+			if typedHandler != nil {
+				mux.HandleFunc("GET /api/health/profile", typedHandler.HandleGetHealthProfile)
+				mux.HandleFunc("POST /api/health/profile", typedHandler.HandleSaveHealthProfile)
+				mux.HandleFunc("PUT /api/health/profile", typedHandler.HandleSaveHealthProfile)
+				mux.HandleFunc("GET /api/health/weight", typedHandler.HandleListWeightEntries)
+				mux.HandleFunc("POST /api/health/weight", typedHandler.HandleLogWeightEntry)
+				mux.HandleFunc("GET /api/health/activity", typedHandler.HandleListActivityEntries)
+				mux.HandleFunc("POST /api/health/activity", typedHandler.HandleLogActivityEntry)
+				mux.HandleFunc("GET /api/health/export", typedHandler.HandleExportUserHealthData)
+			}
 		}
 	}
 
@@ -77,11 +139,14 @@ func CreateApplicationMux(
 }
 
 func main() {
+	LoadDotEnvFileIfPresent(".env", "../../.env")
+
 	var userRegistrationHandler *handlers.UserRegistrationHandler
 	var userSessionHandler *handlers.UserSessionHandler
 	var googleOAuthHandler *handlers.GoogleOAuthHandler
 	var githubOAuthHandler *handlers.GitHubOAuthHandler
 	var twoFactorHandler *handlers.TwoFactorHandler
+	var healthProfileHandler *handlers.HealthProfileHandler
 
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL != "" {
@@ -104,6 +169,9 @@ func main() {
 		}
 
 		jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+		if jwtSecret == "" {
+			jwtSecret = strings.TrimSpace(os.Getenv("ACCESS_TOKEN_SECRET"))
+		}
 		if jwtSecret == "" {
 			jwtSecret = "development-fallback-jwt-secret"
 		}
@@ -131,9 +199,19 @@ func main() {
 			appBaseURL = "http://localhost:3000"
 		}
 
+		googleClientID := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID"))
+		if googleClientID == "" {
+			googleClientID = strings.TrimSpace(os.Getenv("OAUTH_CLIENT_ID"))
+		}
+
+		googleClientSecret := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET"))
+		if googleClientSecret == "" {
+			googleClientSecret = strings.TrimSpace(os.Getenv("OAUTH_CLIENT_SECRET"))
+		}
+
 		googleOAuthConfig := &oauth2.Config{
-			ClientID:     strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID")),
-			ClientSecret: strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET")),
+			ClientID:     googleClientID,
+			ClientSecret: googleClientSecret,
 			RedirectURL:  appBaseURL + "/api/auth/oauth/google/callback",
 			Scopes:       []string{"openid", "email", "profile"},
 			Endpoint: oauth2.Endpoint{
@@ -187,6 +265,21 @@ func main() {
 			log.Fatalf("Failed to initialize two-factor handler: %v", twoFactorHandlerError)
 		}
 		twoFactorHandler = initializedTwoFactorHandler
+
+		healthProfileRepository, healthRepoError := repositories.NewGormHealthProfileRepository(databaseConnection)
+		if healthRepoError != nil {
+			log.Fatalf("Failed to initialize health profile repository: %v", healthRepoError)
+		}
+
+		initializedHealthProfileHandler, healthHandlerError := handlers.NewHealthProfileHandler(
+			healthProfileRepository,
+			userSessionRepository,
+			jwtSecret,
+		)
+		if healthHandlerError != nil {
+			log.Fatalf("Failed to initialize health profile handler: %v", healthHandlerError)
+		}
+		healthProfileHandler = initializedHealthProfileHandler
 	}
 
 	applicationMux := CreateApplicationMux(
@@ -195,6 +288,7 @@ func main() {
 		googleOAuthHandler,
 		githubOAuthHandler,
 		twoFactorHandler,
+		healthProfileHandler,
 	)
 
 	log.Println("Server is running on http://localhost:8080")

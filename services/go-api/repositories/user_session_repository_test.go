@@ -150,4 +150,20 @@ func TestGormUserSessionRepositoryMethodsValidationAndDryRunExecution(testingIns
 	if findSessionErr != nil || foundSession == nil {
 		testingInstance.Fatalf("expected dry-run FindSessionByID to succeed, got session=%+v err=%v", foundSession, findSessionErr)
 	}
+
+	if err := repository.AcceptUserGDPRConsent(ctx, ""); err == nil {
+		testingInstance.Fatal("expected error when userID is empty in AcceptUserGDPRConsent")
+	}
+
+	if consentErr := repository.AcceptUserGDPRConsent(ctx, "user-uuid-1"); consentErr != nil {
+		testingInstance.Fatalf("expected AcceptUserGDPRConsent to succeed in dry-run, got: %v", consentErr)
+	}
+
+	if err := repository.DeleteUnconsentedUserAndAccounts(ctx, ""); err == nil {
+		testingInstance.Fatal("expected error when userID is empty in DeleteUnconsentedUserAndAccounts")
+	}
+
+	if deleteErr := repository.DeleteUnconsentedUserAndAccounts(ctx, "user-uuid-1"); deleteErr != nil {
+		testingInstance.Fatalf("expected DeleteUnconsentedUserAndAccounts to succeed in dry-run, got: %v", deleteErr)
+	}
 }

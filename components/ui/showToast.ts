@@ -1,5 +1,10 @@
-import { APIResponse } from "@/lib/server/response/generateResponse";
 import { toast } from "sonner";
+
+export interface APIResponse {
+    type: 'success' | 'info' | 'error',
+    title: string,
+    message: string,
+}
 
 interface redirectToastProps {
     type : 'success' | 'info' | 'error',

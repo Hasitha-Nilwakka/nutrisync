@@ -1,6 +1,5 @@
 "use client"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Field,
   FieldDescription,
@@ -8,25 +7,23 @@ import {
   FieldGroup,
   FieldLabel,
   FieldLegend,
-  FieldSeparator,
   FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { RegisterFormData, registerFormSchema } from "@/lib/schemas/registerUserSchema"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm, SubmitHandler, Controller } from "react-hook-form"
+import { useForm, SubmitHandler } from "react-hook-form"
 import { Spinner } from "@/components/ui/spinner"
 import axios from "axios"
 
 export default function RegistrationForm() {
-    const {register, handleSubmit, control, reset, formState : {errors, isSubmitting}, setError} = useForm<RegisterFormData>({
+    const {register, handleSubmit, reset, formState : {errors, isSubmitting}, setError} = useForm<RegisterFormData>({
         resolver : zodResolver(registerFormSchema), 
         defaultValues : {
             email : '',
             confirmEmail : '',
             password : '',
             confirmPassword : '',
-            concented : false
         },
         mode : 'all'
     })
@@ -105,37 +102,6 @@ export default function RegistrationForm() {
                                     <FieldError>{errors.confirmPassword.message}</FieldError>
                                 )}
                             </Field>
-                        </FieldGroup>
-                    </FieldSet>
-                    <FieldSeparator />
-                    <FieldSet>
-                        <FieldGroup>
-                            <Field orientation="horizontal">
-                                <Controller 
-                                    control={control}
-                                    name="concented"
-                                    render={({field : {onChange, value}}) => (
-                                        <Checkbox
-                                            id="concent"
-                                            onCheckedChange={onChange}
-                                            checked={value}
-                                        />
-                                    )}
-                                />
-                                <FieldLabel htmlFor="concent" className="font-normal">
-                                I consent to the processing of my personal and health-related data.
-                                </FieldLabel>
-                            </Field>
-                            {errors.concented && (
-                                <FieldError>{errors.concented.message}</FieldError>
-                            )}
-                            <FieldDescription>
-                                I understand that NutriSync collects and processes my profile information, 
-                                health metrics, fitness goals, and lifestyle preferences to calculate wellness indicators, 
-                                track my progress, and generate personalized health insights using AI. 
-                                I have read the [Privacy Policy] and understand how my data is used, stored, and protected. 
-                                I understand that I can withdraw my consent at any time.
-                            </FieldDescription>
                         </FieldGroup>
                     </FieldSet>
                     {errors.root && (

@@ -90,6 +90,18 @@ func (repository *inMemoryTwoFactorRepository) FindSessionByID(
 	return nil, nil
 }
 
+func (repository *inMemoryTwoFactorRepository) AcceptUserGDPRConsent(ctx context.Context, userID string) error {
+	if user, exists := repository.usersByID[userID]; exists {
+		user.Consented = true
+	}
+	return nil
+}
+
+func (repository *inMemoryTwoFactorRepository) DeleteUnconsentedUserAndAccounts(ctx context.Context, userID string) error {
+	delete(repository.usersByID, userID)
+	return nil
+}
+
 func (repository *inMemoryTwoFactorRepository) SetPendingTwoFactorSecret(ctx context.Context, userID, secret string) error {
 	if user, exists := repository.usersByID[userID]; exists {
 		secretCopy := secret

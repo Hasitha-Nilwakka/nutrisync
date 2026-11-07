@@ -27,6 +27,8 @@ type mockUserSessionRepository struct {
 	rotatedNewToken       *models.RefreshToken
 	revokedSessionID      string
 	activeSessionByID     *models.Session
+	acceptedConsentUserID string
+	deletedUnconsentedID  string
 }
 
 func (mockRepo *mockUserSessionRepository) FindUserByEmailForLogin(ctx context.Context, email string) (*models.User, error) {
@@ -82,6 +84,19 @@ func (mockRepo *mockUserSessionRepository) FindSessionByID(
 		return mockRepo.activeSessionByID, nil
 	}
 	return nil, nil
+}
+
+func (mockRepo *mockUserSessionRepository) AcceptUserGDPRConsent(ctx context.Context, userID string) error {
+	mockRepo.acceptedConsentUserID = userID
+	if mockRepo.activeSessionByID != nil && mockRepo.activeSessionByID.User.ID == userID {
+		mockRepo.activeSessionByID.User.Consented = true
+	}
+	return nil
+}
+
+func (mockRepo *mockUserSessionRepository) DeleteUnconsentedUserAndAccounts(ctx context.Context, userID string) error {
+	mockRepo.deletedUnconsentedID = userID
+	return nil
 }
 
 // TestHandleUserLoginRequestSuccessUnverifiedAndWrongPassword verifies 200 OK login with cookies,
@@ -265,5 +280,84 @@ func TestHandleUserLogoutRequestAndVerifyActiveSessionRequest(testingInstance *t
 
 	if mockRepo.revokedSessionID != sessionID {
 		testingInstance.Errorf("expected logout to revoke session %q, got %q", sessionID, mockRepo.revokedSessionID)
+	}
+}
+
+// TestHandleUserGDPRConsentRequestAcceptAndDeclineAndEnrichedSession verifies enriched GET /api/auth/session
+// fields (email, consented, twoFactorEnabled) and POST /api/auth/consent for consented=true and consented=false.
+func TestHandleUserGDPRConsentRequestAcceptAndDeclineAndEnrichedSession(testingInstance *testing.T) {
+	jwtSecret := "test-consent-jwt-secret"
+	sessionID := "session-id-consent"
+	userID := "user-id-consent"
+
+	mockRepo := &mockUserSessionRepository{
+		activeSessionByID: &models.Session{
+			ID:        sessionID,
+			UserID:    userID,
+			Revoked:   false,
+			ExpiresAt: time.Now().UTC().Add(1 * time.Hour),
+			User: models.User{
+				ID:               userID,
+				Email:            "oauth-user@example.com",
+				Consented:        false,
+				TwoFactorEnabled: true,
+			},
+		},
+	}
+
+	sessionHandler, _ := NewUserSessionHandler(mockRepo, jwtSecret, false)
+	accessToken, _ := auth.GenerateSignedAccessToken(userID, sessionID, jwtSecret, 15*time.Minute)
+
+	// 1. Verify enriched GET /api/auth/session returns email, consented=false, twoFactorEnabled=true
+	sessionReq := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+	sessionReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	sessionRec := httptest.NewRecorder()
+	sessionHandler.HandleVerifyActiveSessionRequest(sessionRec, sessionReq)
+
+	if sessionRec.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK from GET /api/auth/session, got %d", sessionRec.Code)
+	}
+
+	var sessionResponse ActiveSessionResponsePayload
+	if decodeErr := json.Unmarshal(sessionRec.Body.Bytes(), &sessionResponse); decodeErr != nil {
+		testingInstance.Fatalf("failed to decode session response: %v", decodeErr)
+	}
+
+	if sessionResponse.Email != "oauth-user@example.com" || sessionResponse.Consented || !sessionResponse.TwoFactorEnabled {
+		testingInstance.Fatalf("unexpected enriched session response: %+v", sessionResponse)
+	}
+
+	// 2. Accept GDPR consent (POST /api/auth/consent { "consented": true })
+	acceptBody, _ := json.Marshal(UserGDPRConsentRequestPayload{Consented: true})
+	acceptReq := httptest.NewRequest(http.MethodPost, "/api/auth/consent", bytes.NewReader(acceptBody))
+	acceptReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	acceptRec := httptest.NewRecorder()
+	sessionHandler.HandleUserGDPRConsentRequest(acceptRec, acceptReq)
+
+	if acceptRec.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK when accepting consent, got %d (%s)", acceptRec.Code, acceptRec.Body.String())
+	}
+
+	if mockRepo.acceptedConsentUserID != userID {
+		testingInstance.Errorf("expected AcceptUserGDPRConsent to be called with %q, got %q", userID, mockRepo.acceptedConsentUserID)
+	}
+
+	// 3. Decline GDPR consent (POST /api/auth/consent { "consented": false }) -> deletes account & clears auth cookies
+	declineBody, _ := json.Marshal(UserGDPRConsentRequestPayload{Consented: false})
+	declineReq := httptest.NewRequest(http.MethodPost, "/api/auth/consent", bytes.NewReader(declineBody))
+	declineReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	declineRec := httptest.NewRecorder()
+	sessionHandler.HandleUserGDPRConsentRequest(declineRec, declineReq)
+
+	if declineRec.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK when declining consent, got %d (%s)", declineRec.Code, declineRec.Body.String())
+	}
+
+	if mockRepo.deletedUnconsentedID != userID {
+		testingInstance.Errorf("expected DeleteUnconsentedUserAndAccounts to be called with %q, got %q", userID, mockRepo.deletedUnconsentedID)
+	}
+
+	if len(declineRec.Result().Cookies()) != 2 {
+		testingInstance.Errorf("expected 2 cleared auth cookies on consent decline, got %d", len(declineRec.Result().Cookies()))
 	}
 }

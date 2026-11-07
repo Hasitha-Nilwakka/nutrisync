@@ -24,8 +24,26 @@ type User struct {
 	VerificationTokenExpiredAt *time.Time `json:"-"`
 	TwoFactorEnabled           bool       `gorm:"column:two_factor_enabled;default:false;not null" json:"twoFactorEnabled"`
 	TwoFactorProvider          *string    `gorm:"column:two_factor_provider" json:"twoFactorProvider,omitempty"`
-	TwoFactorSecret            *string    `gorm:"column:two_factor_secret" json:"-"`
-	TwoFactorPendingSecret     *string    `gorm:"column:two_factor_pending_secret" json:"-"`
-	CreatedAt                  time.Time  `json:"created_at"`
-	UpdatedAt                  time.Time  `json:"updated_at"`
+	TwoFactorSecret            *string        `gorm:"column:two_factor_secret" json:"-"`
+	TwoFactorPendingSecret     *string        `gorm:"column:two_factor_pending_secret" json:"-"`
+	HealthProfile              *HealthProfile `gorm:"foreignKey:UserID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
+	CreatedAt                  time.Time      `json:"created_at"`
+	UpdatedAt                  time.Time      `json:"updated_at"`
+}
+
+// PasswordReset represents a password reset verification token belonging to a User in the "password_resets" table.
+type PasswordReset struct {
+	ID                      string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	UserID                  string     `gorm:"column:user_id;type:uuid;not null;index" json:"userId"`
+	User                    User       `gorm:"foreignKey:UserID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
+	VerificationToken       string     `gorm:"column:verification_token;not null;index" json:"-"`
+	VerificationTokenExpiry time.Time  `gorm:"column:verification_token_expiry;not null" json:"-"`
+	Verified                bool       `gorm:"column:verified;default:false;not null" json:"verified"`
+	RevokedAt               *time.Time `gorm:"column:revoked_at" json:"revokedAt,omitempty"`
+	CreatedAt               time.Time  `gorm:"column:created_at;autoCreateTime" json:"createdAt"`
+}
+
+// TableName specifies the PostgreSQL table name for PasswordReset records.
+func (PasswordReset) TableName() string {
+	return "password_resets"
 }

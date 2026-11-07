@@ -40,5 +40,9 @@ func RunDatabaseMigrations(databaseConnection *gorm.DB) error {
 		&models.Session{},
 		&models.RefreshToken{},
 		&models.Account{},
+		&models.PasswordReset{},
+		&models.HealthProfile{},
+		&models.WeightEntry{},
+		&models.ActivityEntry{},
 	)
 }

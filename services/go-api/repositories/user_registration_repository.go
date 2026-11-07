@@ -63,8 +63,9 @@ func (repository *GormUserRegistrationRepository) CreateUnverifiedUserRecord(use
 		return errors.New("user record must not be nil")
 	}
 
-	// Ensure newly registered user accounts start in an unverified state before persisting.
+	// Ensure newly registered user accounts start in an unverified and unconsented state before persisting.
 	user.Verified = false
+	user.Consented = false
 
 	creationResult := repository.databaseConnection.Create(user)
 	return creationResult.Error

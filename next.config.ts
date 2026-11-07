@@ -49,6 +49,10 @@ const nextConfig: NextConfig = {
           destination: `${goApiBaseUrl}/api/auth/session`,
         },
         {
+          source: "/api/auth/consent",
+          destination: `${goApiBaseUrl}/api/auth/consent`,
+        },
+        {
           source: "/api/auth/oauth/google",
           destination: `${goApiBaseUrl}/api/auth/oauth/google`,
         },
@@ -67,6 +71,10 @@ const nextConfig: NextConfig = {
         {
           source: "/api/auth/2fa/:path*",
           destination: `${goApiBaseUrl}/api/auth/2fa/:path*`,
+        },
+        {
+          source: "/api/health/:path*",
+          destination: `${goApiBaseUrl}/api/health/:path*`,
         },
       ],
     };

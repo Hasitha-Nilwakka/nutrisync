@@ -55,7 +55,7 @@ func NewUserRegistrationHandler(
 }
 
 // ValidateUserRegistrationRequestPayload checks that email is well-formed, confirmEmail matches email,
-// password is at least 8 characters, confirmPassword matches password, and consent is true.
+// password is at least 8 characters, and confirmPassword matches password.
 func ValidateUserRegistrationRequestPayload(payload UserRegistrationRequestPayload) error {
 	trimmedEmail := strings.TrimSpace(payload.Email)
 	if trimmedEmail == "" {
@@ -77,10 +77,6 @@ func ValidateUserRegistrationRequestPayload(payload UserRegistrationRequestPaylo
 
 	if payload.Password != payload.ConfirmPassword {
 		return errors.New("password and confirmPassword do not match")
-	}
-
-	if !payload.Consented && !payload.Concented {
-		return errors.New("user consent is required")
 	}
 
 	return nil
@@ -162,7 +158,7 @@ func (handler *UserRegistrationHandler) HandleUserRegistrationRequest(responseWr
 	newUserRecord := &models.User{
 		Email:                      normalizedEmail,
 		Password:                   hashedPassword,
-		Consented:                  registrationPayload.Consented || registrationPayload.Concented,
+		Consented:                  false,
 		Verified:                   false,
 		VerificationToken:          &verificationToken,
 		VerificationTokenExpiredAt: &tokenExpirationTime,

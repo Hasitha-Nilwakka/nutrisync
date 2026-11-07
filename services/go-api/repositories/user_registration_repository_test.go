@@ -114,6 +114,10 @@ func TestCreateUnverifiedUserRecordValidationAndEnforcesUnverifiedState(testingI
 	if candidateUser.Verified {
 		testingInstance.Error("expected CreateUnverifiedUserRecord to set candidateUser.Verified to false")
 	}
+
+	if candidateUser.Consented {
+		testingInstance.Error("expected CreateUnverifiedUserRecord to set candidateUser.Consented to false")
+	}
 }
 
 // TestFindUserByVerificationTokenValidationAndQueryGeneration verifies input validation and SQL execution

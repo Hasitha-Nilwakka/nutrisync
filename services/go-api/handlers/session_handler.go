@@ -40,8 +40,17 @@ type TwoFactorRequiredLoginResponsePayload struct {
 
 // ActiveSessionResponsePayload represents the JSON body returned by GET /api/auth/session when a session is valid.
 type ActiveSessionResponsePayload struct {
-	UserID    string `json:"userId"`
-	SessionID string `json:"sessionId"`
+	UserID           string `json:"userId"`
+	SessionID        string `json:"sessionId"`
+	Email            string `json:"email"`
+	Consented        bool   `json:"consented"`
+	TwoFactorEnabled bool   `json:"twoFactorEnabled"`
+	HasHealthProfile bool   `json:"hasHealthProfile"`
+}
+
+// UserGDPRConsentRequestPayload represents the JSON body accepted by POST /api/auth/consent.
+type UserGDPRConsentRequestPayload struct {
+	Consented bool `json:"consented"`
 }
 
 // MessageOnlyResponsePayload represents simple JSON message responses returned by refresh and logout endpoints.
@@ -485,8 +494,108 @@ func (handler *UserSessionHandler) HandleVerifyActiveSessionRequest(responseWrit
 		return
 	}
 
+	hasHealthProfile := sessionRecord.User.HealthProfile != nil &&
+		strings.TrimSpace(sessionRecord.User.HealthProfile.ID) != ""
+
 	WriteJSONResponse(responseWriter, http.StatusOK, ActiveSessionResponsePayload{
-		UserID:    sessionRecord.UserID,
-		SessionID: sessionRecord.ID,
+		UserID:           sessionRecord.UserID,
+		SessionID:        sessionRecord.ID,
+		Email:            sessionRecord.User.Email,
+		Consented:        sessionRecord.User.Consented,
+		TwoFactorEnabled: sessionRecord.User.TwoFactorEnabled,
+		HasHealthProfile: hasHealthProfile,
+	})
+}
+
+// HandleUserGDPRConsentRequest handles POST /api/auth/consent:
+// authenticates the caller via access_token cookie and active session check; records GDPR consent when consented == true,
+// or deletes the unconsented user + accounts/sessions and clears authentication cookies when consented == false.
+func (handler *UserSessionHandler) HandleUserGDPRConsentRequest(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		WriteJSONResponse(responseWriter, http.StatusMethodNotAllowed, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Method Not Allowed",
+			Message: "only POST method is supported",
+		})
+		return
+	}
+
+	accessCookie, cookieError := request.Cookie(auth.AccessTokenCookieName)
+	if cookieError != nil || accessCookie == nil {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Unauthorized",
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	claims, verifyError := auth.VerifyAndParseAccessToken(accessCookie.Value, handler.jwtSecret)
+	if verifyError != nil || claims == nil {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Unauthorized",
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	sessionRecord, lookupError := handler.sessionRepository.FindSessionByID(request.Context(), claims.SessionID)
+	currentTimeUTC := time.Now().UTC()
+	if lookupError != nil ||
+		sessionRecord == nil ||
+		sessionRecord.UserID != claims.Subject ||
+		sessionRecord.Revoked ||
+		!currentTimeUTC.Before(sessionRecord.ExpiresAt) {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Unauthorized",
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	var consentPayload UserGDPRConsentRequestPayload
+	if decodeError := json.NewDecoder(request.Body).Decode(&consentPayload); decodeError != nil {
+		WriteJSONResponse(responseWriter, http.StatusBadRequest, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Validation Error",
+			Message: "invalid JSON request body",
+		})
+		return
+	}
+
+	if consentPayload.Consented {
+		if acceptError := handler.sessionRepository.AcceptUserGDPRConsent(request.Context(), sessionRecord.UserID); acceptError != nil {
+			WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+				Type:    "error",
+				Title:   "Consent error",
+				Message: "Failed to record consent",
+			})
+			return
+		}
+
+		WriteJSONResponse(responseWriter, http.StatusOK, StandardAPIResponsePayload{
+			Type:    "success",
+			Title:   "Consent recorded",
+			Message: "Thank you for accepting the data processing terms.",
+		})
+		return
+	}
+
+	if deleteError := handler.sessionRepository.DeleteUnconsentedUserAndAccounts(request.Context(), sessionRecord.UserID); deleteError != nil {
+		WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Consent error",
+			Message: "Failed to remove unconsented account",
+		})
+		return
+	}
+
+	auth.ClearAuthenticationCookies(responseWriter, handler.isProduction)
+	WriteJSONResponse(responseWriter, http.StatusOK, StandardAPIResponsePayload{
+		Type:    "info",
+		Title:   "Account removed",
+		Message: "Consent declined. Your account data has been removed.",
 	})
 }

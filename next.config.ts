@@ -56,6 +56,18 @@ const nextConfig: NextConfig = {
           source: "/api/auth/oauth/google/callback",
           destination: `${goApiBaseUrl}/api/auth/oauth/google/callback`,
         },
+        {
+          source: "/api/auth/oauth/github",
+          destination: `${goApiBaseUrl}/api/auth/oauth/github`,
+        },
+        {
+          source: "/api/auth/oauth/github/callback",
+          destination: `${goApiBaseUrl}/api/auth/oauth/github/callback`,
+        },
+        {
+          source: "/api/auth/2fa/:path*",
+          destination: `${goApiBaseUrl}/api/auth/2fa/:path*`,
+        },
       ],
     };
   },

@@ -22,6 +22,10 @@ type User struct {
 	// VerificationToken and its expiration timestamp are omitted from JSON responses to prevent leaking tokens.
 	VerificationToken          *string    `gorm:"index" json:"-"`
 	VerificationTokenExpiredAt *time.Time `json:"-"`
+	TwoFactorEnabled           bool       `gorm:"column:two_factor_enabled;default:false;not null" json:"twoFactorEnabled"`
+	TwoFactorProvider          *string    `gorm:"column:two_factor_provider" json:"twoFactorProvider,omitempty"`
+	TwoFactorSecret            *string    `gorm:"column:two_factor_secret" json:"-"`
+	TwoFactorPendingSecret     *string    `gorm:"column:two_factor_pending_secret" json:"-"`
 	CreatedAt                  time.Time  `json:"created_at"`
 	UpdatedAt                  time.Time  `json:"updated_at"`
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
 	"nutrysync/go-api/auth"
 	"nutrysync/go-api/database"
 	"nutrysync/go-api/handlers"
@@ -29,11 +30,11 @@ func handleServiceHealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateApplicationMux builds and returns an *http.ServeMux with the health check route
-// and optional user registration, session/authentication, and Google OAuth routes registered.
+// and optional user registration, session/authentication, Google OAuth, and GitHub OAuth routes registered.
 func CreateApplicationMux(
 	userRegistrationHandler *handlers.UserRegistrationHandler,
 	userSessionHandler *handlers.UserSessionHandler,
-	googleOAuthHandlers ...*handlers.GoogleOAuthHandler,
+	oauthHandlers ...any,
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleServiceHealthCheck)
@@ -50,10 +51,26 @@ func CreateApplicationMux(
 		mux.HandleFunc("GET /api/auth/session", userSessionHandler.HandleVerifyActiveSessionRequest)
 	}
 
-	if len(googleOAuthHandlers) > 0 && googleOAuthHandlers[0] != nil {
-		googleOAuthHandler := googleOAuthHandlers[0]
-		mux.HandleFunc("GET /api/auth/oauth/google", googleOAuthHandler.HandleGoogleOAuthLogin)
-		mux.HandleFunc("GET /api/auth/oauth/google/callback", googleOAuthHandler.HandleGoogleOAuthCallback)
+	for _, candidateHandler := range oauthHandlers {
+		switch typedHandler := candidateHandler.(type) {
+		case *handlers.GoogleOAuthHandler:
+			if typedHandler != nil {
+				mux.HandleFunc("GET /api/auth/oauth/google", typedHandler.HandleGoogleOAuthLogin)
+				mux.HandleFunc("GET /api/auth/oauth/google/callback", typedHandler.HandleGoogleOAuthCallback)
+			}
+		case *handlers.GitHubOAuthHandler:
+			if typedHandler != nil {
+				mux.HandleFunc("GET /api/auth/oauth/github", typedHandler.HandleGitHubOAuthLogin)
+				mux.HandleFunc("GET /api/auth/oauth/github/callback", typedHandler.HandleGitHubOAuthCallback)
+			}
+		case *handlers.TwoFactorHandler:
+			if typedHandler != nil {
+				mux.HandleFunc("POST /api/auth/2fa/setup", typedHandler.HandleTwoFactorSetupRequest)
+				mux.HandleFunc("POST /api/auth/2fa/enable", typedHandler.HandleTwoFactorEnableRequest)
+				mux.HandleFunc("POST /api/auth/2fa/disable", typedHandler.HandleTwoFactorDisableRequest)
+				mux.HandleFunc("POST /api/auth/2fa/login-verify", typedHandler.HandleTwoFactorLoginVerifyRequest)
+			}
+		}
 	}
 
 	return mux
@@ -63,6 +80,8 @@ func main() {
 	var userRegistrationHandler *handlers.UserRegistrationHandler
 	var userSessionHandler *handlers.UserSessionHandler
 	var googleOAuthHandler *handlers.GoogleOAuthHandler
+	var githubOAuthHandler *handlers.GitHubOAuthHandler
+	var twoFactorHandler *handlers.TwoFactorHandler
 
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL != "" {
@@ -124,7 +143,7 @@ func main() {
 			},
 		}
 
-		initializedOAuthHandler, oauthHandlerError := handlers.NewGoogleOAuthHandler(
+		initializedGoogleHandler, googleHandlerError := handlers.NewGoogleOAuthHandler(
 			accountRepository,
 			userSessionRepository,
 			googleOAuthConfig,
@@ -132,13 +151,51 @@ func main() {
 			appBaseURL,
 			isProduction,
 		)
-		if oauthHandlerError != nil {
-			log.Fatalf("Failed to initialize Google OAuth handler: %v", oauthHandlerError)
+		if googleHandlerError != nil {
+			log.Fatalf("Failed to initialize Google OAuth handler: %v", googleHandlerError)
 		}
-		googleOAuthHandler = initializedOAuthHandler
+		googleOAuthHandler = initializedGoogleHandler
+
+		githubOAuthConfig := &oauth2.Config{
+			ClientID:     strings.TrimSpace(os.Getenv("GITHUB_CLIENT_ID")),
+			ClientSecret: strings.TrimSpace(os.Getenv("GITHUB_CLIENT_SECRET")),
+			RedirectURL:  appBaseURL + "/api/auth/oauth/github/callback",
+			Scopes:       []string{"read:user", "user:email"},
+			Endpoint:     github.Endpoint,
+		}
+
+		initializedGitHubHandler, githubHandlerError := handlers.NewGitHubOAuthHandler(
+			accountRepository,
+			userSessionRepository,
+			githubOAuthConfig,
+			jwtSecret,
+			appBaseURL,
+			isProduction,
+		)
+		if githubHandlerError != nil {
+			log.Fatalf("Failed to initialize GitHub OAuth handler: %v", githubHandlerError)
+		}
+		githubOAuthHandler = initializedGitHubHandler
+
+		initializedTwoFactorHandler, twoFactorHandlerError := handlers.NewTwoFactorHandler(
+			userSessionRepository,
+			userSessionRepository,
+			jwtSecret,
+			isProduction,
+		)
+		if twoFactorHandlerError != nil {
+			log.Fatalf("Failed to initialize two-factor handler: %v", twoFactorHandlerError)
+		}
+		twoFactorHandler = initializedTwoFactorHandler
 	}
 
-	applicationMux := CreateApplicationMux(userRegistrationHandler, userSessionHandler, googleOAuthHandler)
+	applicationMux := CreateApplicationMux(
+		userRegistrationHandler,
+		userSessionHandler,
+		googleOAuthHandler,
+		githubOAuthHandler,
+		twoFactorHandler,
+	)
 
 	log.Println("Server is running on http://localhost:8080")
 

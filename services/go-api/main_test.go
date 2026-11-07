@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/github"
 	"nutrysync/go-api/handlers"
 	"nutrysync/go-api/models"
 )
@@ -31,6 +33,21 @@ func (stubMainSessionRepository) RevokeSessionAndAllRefreshTokens(ctx context.Co
 }
 func (stubMainSessionRepository) FindSessionByID(ctx context.Context, sessionID string) (*models.Session, error) {
 	return nil, nil
+}
+
+type stubMainAccountRepository struct{}
+
+func (stubMainAccountRepository) FindAccountByProviderAndID(ctx context.Context, provider, providerUserID string) (*models.Account, error) {
+	return nil, nil
+}
+func (stubMainAccountRepository) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	return nil, nil
+}
+func (stubMainAccountRepository) CreateOAuthUserAndAccount(ctx context.Context, user *models.User, account *models.Account) error {
+	return nil
+}
+func (stubMainAccountRepository) LinkAccountToExistingUser(ctx context.Context, account *models.Account) error {
+	return nil
 }
 
 func TestHandleServiceHealthCheckReturnsExpectedJSONResponse(testingInstance *testing.T) {
@@ -71,7 +88,31 @@ func TestCreateApplicationMuxRegistersHealthRegistrationAndSessionRoutes(testing
 		testingInstance.Fatalf("failed to initialize sessionHandler: %v", err)
 	}
 
-	mux := CreateApplicationMux(registrationHandler, sessionHandler)
+	googleHandler, _ := handlers.NewGoogleOAuthHandler(
+		stubMainAccountRepository{},
+		stubMainSessionRepository{},
+		&oauth2.Config{
+			ClientID: "google-id",
+			Endpoint: oauth2.Endpoint{AuthURL: "https://accounts.google.com/o/oauth2/auth"},
+		},
+		"test-secret",
+		"http://localhost:3000",
+		false,
+	)
+
+	githubHandler, _ := handlers.NewGitHubOAuthHandler(
+		stubMainAccountRepository{},
+		stubMainSessionRepository{},
+		&oauth2.Config{
+			ClientID: "github-id",
+			Endpoint: github.Endpoint,
+		},
+		"test-secret",
+		"http://localhost:3000",
+		false,
+	)
+
+	mux := CreateApplicationMux(registrationHandler, sessionHandler, googleHandler, githubHandler)
 
 	routesToCheck := []struct {
 		method         string
@@ -82,6 +123,10 @@ func TestCreateApplicationMuxRegistersHealthRegistrationAndSessionRoutes(testing
 		{method: http.MethodGet, path: "/api/auth/verify", expectedStatus: http.StatusBadRequest},
 		{method: http.MethodPost, path: "/api/auth/logout", expectedStatus: http.StatusOK},
 		{method: http.MethodGet, path: "/api/auth/session", expectedStatus: http.StatusUnauthorized},
+		{method: http.MethodGet, path: "/api/auth/oauth/google", expectedStatus: http.StatusTemporaryRedirect},
+		{method: http.MethodGet, path: "/api/auth/oauth/google/callback", expectedStatus: http.StatusSeeOther},
+		{method: http.MethodGet, path: "/api/auth/oauth/github", expectedStatus: http.StatusTemporaryRedirect},
+		{method: http.MethodGet, path: "/api/auth/oauth/github/callback", expectedStatus: http.StatusSeeOther},
 	}
 
 	for _, route := range routesToCheck {

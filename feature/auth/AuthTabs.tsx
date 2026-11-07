@@ -1,15 +1,16 @@
 // Feature component providing tabbed navigation between LoginForm and RegistrationForm
-// on the root route (/), defaulting to the Login tab and rendering the Google OAuth wireframe button in both tabs.
+// on the root route (/), defaulting to the Login tab and rendering Google and GitHub OAuth wireframe buttons in both tabs.
 "use client"
 
 import { FieldSeparator } from "@/components/ui/field"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import GithubAuthButton from "@/feature/auth/GithubAuthButton"
 import GoogleAuthButton from "@/feature/auth/GoogleAuthButton"
 import LoginForm from "@/feature/auth/login/login"
 import RegistrationForm from "@/feature/auth/register/Register"
 
 // AuthTabs renders a unified Tabs interface for switching between Login and Register forms,
-// including a shared "Continue with Google" wireframe option in each tab panel.
+// including shared "Continue with Google" and "Continue with GitHub" wireframe options in each tab panel.
 export default function AuthTabs() {
   return (
     <Tabs defaultValue="login" className="w-full max-w-md">
@@ -22,7 +23,10 @@ export default function AuthTabs() {
         <div className="flex w-full flex-col gap-4 rounded-lg border p-4 sm:p-6">
           <LoginForm />
           <FieldSeparator>Or</FieldSeparator>
-          <GoogleAuthButton />
+          <div className="flex flex-col gap-2">
+            <GoogleAuthButton />
+            <GithubAuthButton />
+          </div>
         </div>
       </TabsContent>
 
@@ -30,7 +34,10 @@ export default function AuthTabs() {
         <div className="flex w-full flex-col gap-4 rounded-lg border p-4 sm:p-6 [&_form]:border-0">
           <RegistrationForm />
           <FieldSeparator>Or</FieldSeparator>
-          <GoogleAuthButton />
+          <div className="flex flex-col gap-2">
+            <GoogleAuthButton />
+            <GithubAuthButton />
+          </div>
         </div>
       </TabsContent>
     </Tabs>

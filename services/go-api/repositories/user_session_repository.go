@@ -22,6 +22,15 @@ type UserSessionRepository interface {
 	FindSessionByID(ctx context.Context, sessionID string) (*models.Session, error)
 }
 
+// TwoFactorRepository defines the persistence operations required for configuring, enabling,
+// disabling, and verifying optional TOTP two-factor authentication on a user account.
+type TwoFactorRepository interface {
+	SetPendingTwoFactorSecret(ctx context.Context, userID, secret string) error
+	EnableTwoFactorAuthentication(ctx context.Context, userID string) error
+	DisableTwoFactorAuthentication(ctx context.Context, userID string) error
+	FindUserByID(ctx context.Context, userID string) (*models.User, error)
+}
+
 // GormUserSessionRepository implements UserSessionRepository using a GORM *gorm.DB connection.
 type GormUserSessionRepository struct {
 	databaseConnection *gorm.DB
@@ -221,4 +230,114 @@ func (repository *GormUserSessionRepository) FindSessionByID(
 	}
 
 	return &sessionRecord, nil
+}
+
+// SetPendingTwoFactorSecret stores a newly generated TOTP secret in two_factor_pending_secret for the given userID.
+func (repository *GormUserSessionRepository) SetPendingTwoFactorSecret(
+	ctx context.Context,
+	userID, secret string,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return errors.New("user ID must not be empty")
+	}
+
+	trimmedSecret := strings.TrimSpace(secret)
+	if trimmedSecret == "" {
+		return errors.New("two-factor pending secret must not be empty")
+	}
+
+	return repository.databaseConnection.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", trimmedUserID).
+		Update("two_factor_pending_secret", trimmedSecret).Error
+}
+
+// EnableTwoFactorAuthentication promotes two_factor_pending_secret to two_factor_secret, clears two_factor_pending_secret,
+// sets two_factor_enabled = true, and sets two_factor_provider = "authenticator" for the given userID.
+func (repository *GormUserSessionRepository) EnableTwoFactorAuthentication(
+	ctx context.Context,
+	userID string,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return errors.New("user ID must not be empty")
+	}
+
+	updates := map[string]any{
+		"two_factor_secret":         gorm.Expr("two_factor_pending_secret"),
+		"two_factor_pending_secret": nil,
+		"two_factor_enabled":        true,
+		"two_factor_provider":       "authenticator",
+	}
+
+	return repository.databaseConnection.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", trimmedUserID).
+		Updates(updates).Error
+}
+
+// DisableTwoFactorAuthentication disables 2FA and clears two_factor_secret, two_factor_pending_secret,
+// and two_factor_provider for the given userID.
+func (repository *GormUserSessionRepository) DisableTwoFactorAuthentication(
+	ctx context.Context,
+	userID string,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return errors.New("user ID must not be empty")
+	}
+
+	updates := map[string]any{
+		"two_factor_enabled":        false,
+		"two_factor_secret":         nil,
+		"two_factor_pending_secret": nil,
+		"two_factor_provider":       nil,
+	}
+
+	return repository.databaseConnection.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", trimmedUserID).
+		Updates(updates).Error
+}
+
+// FindUserByID retrieves a User record by its primary key ID.
+// Returns (nil, nil) when gorm.ErrRecordNotFound occurs.
+func (repository *GormUserSessionRepository) FindUserByID(
+	ctx context.Context,
+	userID string,
+) (*models.User, error) {
+	if repository == nil || repository.databaseConnection == nil {
+		return nil, errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return nil, errors.New("user ID must not be empty")
+	}
+
+	var userRecord models.User
+	queryResult := repository.databaseConnection.WithContext(ctx).
+		Where("id = ?", trimmedUserID).
+		First(&userRecord)
+	if queryResult.Error != nil {
+		if errors.Is(queryResult.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, queryResult.Error
+	}
+
+	return &userRecord, nil
 }

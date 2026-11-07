@@ -19,14 +19,23 @@ import (
 )
 
 const (
-	accessTokenLifetimeDuration  = 15 * time.Minute
-	refreshTokenLifetimeDuration = 7 * 24 * time.Hour
+	accessTokenLifetimeDuration     = 15 * time.Minute
+	refreshTokenLifetimeDuration    = 7 * 24 * time.Hour
+	twoFactorTicketLifetimeDuration = 5 * time.Minute
 )
 
 // UserLoginRequestPayload represents the JSON body accepted by POST /api/auth/login.
 type UserLoginRequestPayload struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+// TwoFactorRequiredLoginResponsePayload represents the JSON body returned by POST /api/auth/login
+// when credentials are valid and the user has two-factor authentication enabled.
+type TwoFactorRequiredLoginResponsePayload struct {
+	Require2FA bool   `json:"require2FA"`
+	Ticket     string `json:"ticket"`
+	Message    string `json:"message"`
 }
 
 // ActiveSessionResponsePayload represents the JSON body returned by GET /api/auth/session when a session is valid.
@@ -191,6 +200,29 @@ func (handler *UserSessionHandler) HandleUserLoginRequest(responseWriter http.Re
 			Type:    "error",
 			Title:   "Verification pending",
 			Message: "Verification pending, please check email",
+		})
+		return
+	}
+
+	if userRecord.TwoFactorEnabled {
+		twoFactorTicket, ticketError := auth.GenerateTwoFactorTicket(
+			userRecord.ID,
+			handler.jwtSecret,
+			twoFactorTicketLifetimeDuration,
+		)
+		if ticketError != nil {
+			WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+				Type:    "error",
+				Title:   "Login failed",
+				Message: "Internal server error",
+			})
+			return
+		}
+
+		WriteJSONResponse(responseWriter, http.StatusOK, TwoFactorRequiredLoginResponsePayload{
+			Require2FA: true,
+			Ticket:     twoFactorTicket,
+			Message:    "2FA verification required",
 		})
 		return
 	}

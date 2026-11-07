@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/oauth2"
 	"nutrysync/go-api/auth"
 	"nutrysync/go-api/database"
 	"nutrysync/go-api/handlers"
@@ -28,10 +29,11 @@ func handleServiceHealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateApplicationMux builds and returns an *http.ServeMux with the health check route
-// and optional user registration and session/authentication routes registered.
+// and optional user registration, session/authentication, and Google OAuth routes registered.
 func CreateApplicationMux(
 	userRegistrationHandler *handlers.UserRegistrationHandler,
 	userSessionHandler *handlers.UserSessionHandler,
+	googleOAuthHandlers ...*handlers.GoogleOAuthHandler,
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleServiceHealthCheck)
@@ -48,12 +50,19 @@ func CreateApplicationMux(
 		mux.HandleFunc("GET /api/auth/session", userSessionHandler.HandleVerifyActiveSessionRequest)
 	}
 
+	if len(googleOAuthHandlers) > 0 && googleOAuthHandlers[0] != nil {
+		googleOAuthHandler := googleOAuthHandlers[0]
+		mux.HandleFunc("GET /api/auth/oauth/google", googleOAuthHandler.HandleGoogleOAuthLogin)
+		mux.HandleFunc("GET /api/auth/oauth/google/callback", googleOAuthHandler.HandleGoogleOAuthCallback)
+	}
+
 	return mux
 }
 
 func main() {
 	var userRegistrationHandler *handlers.UserRegistrationHandler
 	var userSessionHandler *handlers.UserSessionHandler
+	var googleOAuthHandler *handlers.GoogleOAuthHandler
 
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if databaseURL != "" {
@@ -92,9 +101,44 @@ func main() {
 			log.Fatalf("Failed to initialize user session handler: %v", sessionHandlerError)
 		}
 		userSessionHandler = initializedSessionHandler
+
+		accountRepository, accountRepoError := repositories.NewGormAccountRepository(databaseConnection)
+		if accountRepoError != nil {
+			log.Fatalf("Failed to initialize account repository: %v", accountRepoError)
+		}
+
+		appBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("APP_URL")), "/")
+		if appBaseURL == "" {
+			appBaseURL = "http://localhost:3000"
+		}
+
+		googleOAuthConfig := &oauth2.Config{
+			ClientID:     strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID")),
+			ClientSecret: strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET")),
+			RedirectURL:  appBaseURL + "/api/auth/oauth/google/callback",
+			Scopes:       []string{"openid", "email", "profile"},
+			Endpoint: oauth2.Endpoint{
+				AuthURL:   "https://accounts.google.com/o/oauth2/auth",
+				TokenURL:  "https://oauth2.googleapis.com/token",
+				AuthStyle: oauth2.AuthStyleInParams,
+			},
+		}
+
+		initializedOAuthHandler, oauthHandlerError := handlers.NewGoogleOAuthHandler(
+			accountRepository,
+			userSessionRepository,
+			googleOAuthConfig,
+			jwtSecret,
+			appBaseURL,
+			isProduction,
+		)
+		if oauthHandlerError != nil {
+			log.Fatalf("Failed to initialize Google OAuth handler: %v", oauthHandlerError)
+		}
+		googleOAuthHandler = initializedOAuthHandler
 	}
 
-	applicationMux := CreateApplicationMux(userRegistrationHandler, userSessionHandler)
+	applicationMux := CreateApplicationMux(userRegistrationHandler, userSessionHandler, googleOAuthHandler)
 
 	log.Println("Server is running on http://localhost:8080")
 

@@ -27,7 +27,7 @@ func ConnectToPostgreSQLDatabase(databaseURL string) (*gorm.DB, error) {
 }
 
 // RunDatabaseMigrations runs GORM AutoMigrate for the application's domain models
-// (models.User, models.Session, and models.RefreshToken).
+// (models.User, models.Session, models.RefreshToken, and models.Account).
 // Expects a non-nil *gorm.DB connection created by ConnectToPostgreSQLDatabase and returns any migration error.
 func RunDatabaseMigrations(databaseConnection *gorm.DB) error {
 	// Guard against nil pointer dereference if called before a valid database connection is established.
@@ -35,5 +35,10 @@ func RunDatabaseMigrations(databaseConnection *gorm.DB) error {
 		return errors.New("database connection must not be nil")
 	}
 
-	return databaseConnection.AutoMigrate(&models.User{}, &models.Session{}, &models.RefreshToken{})
+	return databaseConnection.AutoMigrate(
+		&models.User{},
+		&models.Session{},
+		&models.RefreshToken{},
+		&models.Account{},
+	)
 }

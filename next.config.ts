@@ -48,6 +48,14 @@ const nextConfig: NextConfig = {
           source: "/api/auth/session",
           destination: `${goApiBaseUrl}/api/auth/session`,
         },
+        {
+          source: "/api/auth/oauth/google",
+          destination: `${goApiBaseUrl}/api/auth/oauth/google`,
+        },
+        {
+          source: "/api/auth/oauth/google/callback",
+          destination: `${goApiBaseUrl}/api/auth/oauth/google/callback`,
+        },
       ],
     };
   },

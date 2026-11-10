@@ -64,46 +64,50 @@ func TestHandleGitHubOAuthLoginSetsStateCookieAndRedirectsToGitHub(testingInstan
 // 4. Existing user by email (Consented: true) links GitHub account and redirects to /dashboard
 func TestHandleGitHubOAuthCallbackStateMismatchNewUserAndExistingUserLinking(testingInstance *testing.T) {
 	returnVerifiedEmail := true
+	mockGitHubBaseURL := "https://mock.github.oauth.internal"
 
-	mockGitHubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/login/oauth/access_token":
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"access_token": "mock-github-access-token",
-				"token_type":   "bearer",
-			})
-		case "/user":
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(GitHubUserProfilePayload{
-				ID:    987654321,
-				Login: "octocat",
-			})
-		case "/user/emails":
-			w.Header().Set("Content-Type", "application/json")
-			if !returnVerifiedEmail {
-				_ = json.NewEncoder(w).Encode([]GitHubUserEmailEntry{
-					{Email: "unverified@github.com", Primary: true, Verified: false},
+	mockGitHubHTTPClient := &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			switch r.URL.Path {
+			case "/login/oauth/access_token":
+				rec.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(rec).Encode(map[string]any{
+					"access_token": "mock-github-access-token",
+					"token_type":   "bearer",
 				})
-				return
+			case "/user":
+				rec.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(rec).Encode(GitHubUserProfilePayload{
+					ID:    987654321,
+					Login: "octocat",
+				})
+			case "/user/emails":
+				rec.Header().Set("Content-Type", "application/json")
+				if !returnVerifiedEmail {
+					_ = json.NewEncoder(rec).Encode([]GitHubUserEmailEntry{
+						{Email: "unverified@github.com", Primary: true, Verified: false},
+					})
+				} else {
+					_ = json.NewEncoder(rec).Encode([]GitHubUserEmailEntry{
+						{Email: "secondary@github.com", Primary: false, Verified: true},
+						{Email: "primary-octocat@github.com", Primary: true, Verified: true},
+					})
+				}
+			default:
+				rec.WriteHeader(http.StatusNotFound)
 			}
-			_ = json.NewEncoder(w).Encode([]GitHubUserEmailEntry{
-				{Email: "secondary@github.com", Primary: false, Verified: true},
-				{Email: "primary-octocat@github.com", Primary: true, Verified: true},
-			})
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer mockGitHubServer.Close()
+			return rec.Result(), nil
+		}),
+	}
 
 	oauthConfig := &oauth2.Config{
 		ClientID:     "github-client-id",
 		ClientSecret: "github-client-secret",
 		RedirectURL:  "http://localhost:3000/api/auth/oauth/github/callback",
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  mockGitHubServer.URL + "/login/oauth/authorize",
-			TokenURL: mockGitHubServer.URL + "/login/oauth/access_token",
+			AuthURL:  mockGitHubBaseURL + "/login/oauth/authorize",
+			TokenURL: mockGitHubBaseURL + "/login/oauth/access_token",
 		},
 	}
 
@@ -118,9 +122,9 @@ func TestHandleGitHubOAuthCallbackStateMismatchNewUserAndExistingUserLinking(tes
 		"http://localhost:3000",
 		false,
 	)
-	githubHandler.userEndpointURL = mockGitHubServer.URL + "/user"
-	githubHandler.userEmailsEndpointURL = mockGitHubServer.URL + "/user/emails"
-	githubHandler.httpClient = mockGitHubServer.Client()
+	githubHandler.userEndpointURL = mockGitHubBaseURL + "/user"
+	githubHandler.userEmailsEndpointURL = mockGitHubBaseURL + "/user/emails"
+	githubHandler.httpClient = mockGitHubHTTPClient
 
 	// 1. State mismatch -> redirects to /?error=oauth_state_invalid
 	mismatchReq := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/github/callback?state=wrong&code=abc", nil)

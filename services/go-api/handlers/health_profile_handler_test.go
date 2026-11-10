@@ -7,20 +7,25 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"nutrysync/go-api/auth"
+	"nutrysync/go-api/health"
 	"nutrysync/go-api/models"
 	"nutrysync/go-api/repositories"
 )
 
 type inMemoryHealthProfileRepository struct {
-	profilesByUserID map[string]*models.HealthProfile
-	weightsByUserID  map[string][]models.WeightEntry
-	activityByUserID map[string][]models.ActivityEntry
+	profilesByUserID  map[string]*models.HealthProfile
+	weightsByUserID   map[string][]models.WeightEntry
+	activityByUserID  map[string][]models.ActivityEntry
+	wellnessByUserID  map[string][]models.WellnessSnapshot
+	insightsByUserID  map[string][]models.AIInsightRecord
 }
 
 func newInMemoryHealthProfileRepository() *inMemoryHealthProfileRepository {
@@ -28,6 +33,8 @@ func newInMemoryHealthProfileRepository() *inMemoryHealthProfileRepository {
 		profilesByUserID: make(map[string]*models.HealthProfile),
 		weightsByUserID:  make(map[string][]models.WeightEntry),
 		activityByUserID: make(map[string][]models.ActivityEntry),
+		wellnessByUserID: make(map[string][]models.WellnessSnapshot),
+		insightsByUserID: make(map[string][]models.AIInsightRecord),
 	}
 }
 
@@ -69,6 +76,69 @@ func (repo *inMemoryHealthProfileRepository) CreateActivityEntry(ctx context.Con
 
 func (repo *inMemoryHealthProfileRepository) ListActivityEntriesByUserID(ctx context.Context, userID string) ([]models.ActivityEntry, error) {
 	return repo.activityByUserID[userID], nil
+}
+
+func (repo *inMemoryHealthProfileRepository) CreateWellnessSnapshot(ctx context.Context, snapshot *models.WellnessSnapshot) error {
+	repo.wellnessByUserID[snapshot.UserID] = append(repo.wellnessByUserID[snapshot.UserID], *snapshot)
+	return nil
+}
+
+func (repo *inMemoryHealthProfileRepository) ListWellnessSnapshotsByUserID(ctx context.Context, userID string) ([]models.WellnessSnapshot, error) {
+	return repo.wellnessByUserID[userID], nil
+}
+
+func (repo *inMemoryHealthProfileRepository) CreateAIInsightRecord(ctx context.Context, record *models.AIInsightRecord) error {
+	existing := repo.insightsByUserID[record.UserID]
+	repo.insightsByUserID[record.UserID] = append([]models.AIInsightRecord{*record}, existing...)
+	return nil
+}
+
+func (repo *inMemoryHealthProfileRepository) FindLatestAIInsightRecordByUserID(ctx context.Context, userID string) (*models.AIInsightRecord, error) {
+	records := repo.insightsByUserID[userID]
+	if len(records) == 0 {
+		return nil, nil
+	}
+	latest := records[0]
+	return &latest, nil
+}
+
+func (repo *inMemoryHealthProfileRepository) ListAIInsightRecordsByUserID(ctx context.Context, userID string) ([]models.AIInsightRecord, error) {
+	return repo.insightsByUserID[userID], nil
+}
+
+type mockPyAIAnalyticsClient struct {
+	shouldFail       bool
+	capturedPayloads []*health.AnonymizedAIAnalysisPayload
+}
+
+func (mock *mockPyAIAnalyticsClient) AnalyzeUserHealthAndGenerateInsights(
+	ctx context.Context,
+	payload *health.AnonymizedAIAnalysisPayload,
+) (*health.PyAIAnalysisResponse, error) {
+	mock.capturedPayloads = append(mock.capturedPayloads, payload)
+	if mock.shouldFail {
+		return nil, errors.New("py-ai service connection refused")
+	}
+
+	return &health.PyAIAnalysisResponse{
+		Wellness: nil, // let deterministic wellness calculation or py-ai wellness be verified
+		Insights: &health.PyAIInsightsPayload{
+			PromptStrategy:       "cot_few_shot_v1",
+			HealthStatusAnalysis: "Goal-focused analysis for " + payload.UserMetrics.TargetState.PrimaryGoal,
+			ProgressEvaluation:   "Progress evaluation toward target weight.",
+			Recommendations: []health.PrioritizedAIRecommendation{
+				{
+					Title:          "Prioritize Protein & Recovery",
+					Category:       "nutrition",
+					Priority:       "high",
+					Action:         "Consume 1.6g/kg protein daily.",
+					ExpectedImpact: "Supports lean mass and satiety.",
+				},
+			},
+			WeeklySummary:  "Weekly summary for " + payload.UserMetrics.TargetState.PrimaryGoal,
+			MonthlySummary: "Monthly summary for " + payload.UserMetrics.TargetState.PrimaryGoal,
+		},
+	}, nil
 }
 
 // TestHealthProfileHandlerImperialConversionInvalidBMIAndDuplicateActivityConflict verifies:
@@ -213,5 +283,175 @@ func TestHealthProfileHandlerImperialConversionInvalidBMIAndDuplicateActivityCon
 
 	if len(exportData.WeightEntries) != 1 || len(exportData.ActivityEntries) != 1 {
 		testingInstance.Fatalf("expected 1 weightEntry and 1 activityEntry in GDPR export, got weights=%d activities=%d", len(exportData.WeightEntries), len(exportData.ActivityEntries))
+	}
+}
+
+// TestHealthProfileHandlerWellnessRecalculationGoalChangeVersioningAndCachedFallback verifies:
+// 1. Outbound py-ai payloads strip PII (email, raw user ID, session ID)
+// 2. Saving a profile, logging activity, and logging weight each append a recalculated WellnessSnapshot
+// 3. Updating PrimaryGoal triggers a new versioned AIInsightRecord (Version = prevVersion + 1)
+// 4. When py-ai returns an error, GET /api/health/dashboard and POST /api/health/insights/regenerate
+//    gracefully serve the latest cached AIInsightRecord with isCachedFallback: true and 200 OK
+func TestHealthProfileHandlerWellnessRecalculationGoalChangeVersioningAndCachedFallback(testingInstance *testing.T) {
+	jwtSecret := "test-orchestrator-jwt-secret"
+	userID := "secret-raw-user-uuid-999"
+	sessionID := "secret-session-uuid-888"
+	userEmail := "sensitive-pii-user@example.com"
+
+	healthRepo := newInMemoryHealthProfileRepository()
+	sessionRepo := &mockUserSessionRepository{
+		activeSessionByID: &models.Session{
+			ID:        sessionID,
+			UserID:    userID,
+			Revoked:   false,
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+			User: models.User{
+				ID:        userID,
+				Email:     userEmail,
+				Consented: true,
+			},
+		},
+	}
+
+	mockAIClient := &mockPyAIAnalyticsClient{}
+	handler, initErr := NewHealthProfileHandler(healthRepo, sessionRepo, jwtSecret, mockAIClient)
+	if initErr != nil {
+		testingInstance.Fatalf("expected NewHealthProfileHandler to succeed, got: %v", initErr)
+	}
+
+	accessToken, _ := auth.GenerateSignedAccessToken(userID, sessionID, jwtSecret, 15*time.Minute)
+
+	// Step 1: Save initial profile (PrimaryGoal = "weight_loss")
+	initialProfile := SaveHealthProfileRequestPayload{
+		Age:                30,
+		Gender:             "female",
+		Height:             165.0,
+		HeightUnit:         "cm",
+		CurrentWeight:      75.0,
+		TargetWeight:       63.0,
+		WeightUnit:         "kg",
+		ActivityLevel:      "lightly_active",
+		PrimaryGoal:        "weight_loss",
+		TargetActivityLevel: "moderately_active",
+		TargetWeeklyDays:   4,
+		WeeklyActivityDays: 1,
+		SleepHours:         7.0,
+		WaterLiters:        2.0,
+	}
+	profileBody, _ := json.Marshal(initialProfile)
+	profileReq := httptest.NewRequest(http.MethodPost, "/api/health/profile", bytes.NewReader(profileBody))
+	profileReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	profileRec := httptest.NewRecorder()
+	handler.HandleSaveHealthProfile(profileRec, profileReq)
+
+	if profileRec.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK saving profile, got %d (%s)", profileRec.Code, profileRec.Body.String())
+	}
+
+	if len(mockAIClient.capturedPayloads) != 1 {
+		testingInstance.Fatalf("expected 1 outbound py-ai call on profile save, got %d", len(mockAIClient.capturedPayloads))
+	}
+
+	serializedOutbound, _ := json.Marshal(mockAIClient.capturedPayloads[0])
+	if strings.Contains(string(serializedOutbound), userID) ||
+		strings.Contains(string(serializedOutbound), userEmail) ||
+		strings.Contains(string(serializedOutbound), sessionID) {
+		testingInstance.Fatalf("outbound py-ai payload leaked PII: %s", string(serializedOutbound))
+	}
+
+	// Step 2: Log activity and weight entries -> verify wellness history grows and score updates
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		actBody, _ := json.Marshal(LogActivityEntryRequestPayload{
+			ExerciseType:    "running",
+			DurationMinutes: 45,
+			Intensity:       "high",
+			RecordedAt:      now.Add(time.Duration(i+1) * time.Minute),
+		})
+		actReq := httptest.NewRequest(http.MethodPost, "/api/health/activity", bytes.NewReader(actBody))
+		actReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+		actRec := httptest.NewRecorder()
+		handler.HandleLogActivityEntry(actRec, actReq)
+		if actRec.Code != http.StatusCreated {
+			testingInstance.Fatalf("expected 201 Created logging activity, got %d", actRec.Code)
+		}
+	}
+
+	weightBody, _ := json.Marshal(LogWeightEntryRequestPayload{Weight: 71.0, Unit: "kg"})
+	weightReq := httptest.NewRequest(http.MethodPost, "/api/health/weight", bytes.NewReader(weightBody))
+	weightReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	weightRec := httptest.NewRecorder()
+	handler.HandleLogWeightEntry(weightRec, weightReq)
+	if weightRec.Code != http.StatusCreated {
+		testingInstance.Fatalf("expected 201 Created logging weight, got %d", weightRec.Code)
+	}
+
+	snapshots, _ := healthRepo.ListWellnessSnapshotsByUserID(context.Background(), userID)
+	if len(snapshots) != 5 {
+		testingInstance.Fatalf("expected 5 WellnessSnapshots (1 profile + 3 activities + 1 weight), got %d", len(snapshots))
+	}
+	if snapshots[len(snapshots)-1].WellnessScore <= snapshots[0].WellnessScore {
+		testingInstance.Errorf(
+			"expected latest WellnessScore (%.2f) to exceed initial WellnessScore (%.2f) after activity + weight progress",
+			snapshots[len(snapshots)-1].WellnessScore,
+			snapshots[0].WellnessScore,
+		)
+	}
+
+	// Step 3: Update PrimaryGoal -> creates Version 2 AIInsightRecord
+	updatedProfile := initialProfile
+	updatedProfile.CurrentWeight = 71.0
+	updatedProfile.PrimaryGoal = "muscle_gain"
+	updatedBody, _ := json.Marshal(updatedProfile)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/health/profile", bytes.NewReader(updatedBody))
+	updateReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	updateRec := httptest.NewRecorder()
+	handler.HandleSaveHealthProfile(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK updating profile goal, got %d", updateRec.Code)
+	}
+
+	latestInsight, _ := healthRepo.FindLatestAIInsightRecordByUserID(context.Background(), userID)
+	if latestInsight == nil || latestInsight.Version != 2 || latestInsight.PrimaryGoalSnapshot != "muscle_gain" {
+		testingInstance.Fatalf("expected Version 2 AIInsightRecord for muscle_gain, got %+v", latestInsight)
+	}
+
+	// Step 4: Simulate py-ai outage and verifyPOST /api/health/insights/regenerate and GET /api/health/dashboard serve cached fallback
+	mockAIClient.shouldFail = true
+
+	regenReq := httptest.NewRequest(http.MethodPost, "/api/health/insights/regenerate", nil)
+	regenReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	regenRec := httptest.NewRecorder()
+	handler.HandleRegenerateAIInsights(regenRec, regenReq)
+
+	if regenRec.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK on regenerate fallback when py-ai is down, got %d", regenRec.Code)
+	}
+
+	var regenResp RegenerateAIInsightsResponsePayload
+	if err := json.Unmarshal(regenRec.Body.Bytes(), &regenResp); err != nil {
+		testingInstance.Fatalf("failed to decode RegenerateAIInsightsResponsePayload: %v", err)
+	}
+
+	if regenResp.AIServiceAvailable || !regenResp.IsCachedFallback || regenResp.LatestInsights == nil || regenResp.LatestInsights.Version != 2 {
+		testingInstance.Errorf("expected cached fallback insight Version 2 when py-ai fails, got %+v", regenResp)
+	}
+
+	dashReq := httptest.NewRequest(http.MethodGet, "/api/health/dashboard", nil)
+	dashReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	dashRec := httptest.NewRecorder()
+	handler.HandleGetHealthDashboard(dashRec, dashReq)
+
+	if dashRec.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK from GET /api/health/dashboard, got %d", dashRec.Code)
+	}
+
+	var dashResp HealthDashboardResponsePayload
+	if err := json.Unmarshal(dashRec.Body.Bytes(), &dashResp); err != nil {
+		testingInstance.Fatalf("failed to decode HealthDashboardResponsePayload: %v", err)
+	}
+
+	if dashResp.HealthProfile == nil || dashResp.LatestWellness == nil || dashResp.LatestInsights == nil || len(dashResp.InsightHistory) != 2 {
+		testingInstance.Errorf("unexpected dashboard payload: %+v", dashResp)
 	}
 }

@@ -44,5 +44,7 @@ func RunDatabaseMigrations(databaseConnection *gorm.DB) error {
 		&models.HealthProfile{},
 		&models.WeightEntry{},
 		&models.ActivityEntry{},
+		&models.WellnessSnapshot{},
+		&models.AIInsightRecord{},
 	)
 }

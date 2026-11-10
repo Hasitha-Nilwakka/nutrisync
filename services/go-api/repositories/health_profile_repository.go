@@ -15,7 +15,7 @@ import (
 var ErrDuplicateActivityTimestamp = errors.New("duplicate activity entry for the same timestamp is not allowed")
 
 // HealthProfileRepository defines the persistence operations for user health profiles,
-// historical weight tracking, and activity logging.
+// historical weight tracking, activity logging, wellness score snapshots, and versioned AI insights.
 type HealthProfileRepository interface {
 	FindHealthProfileByUserID(ctx context.Context, userID string) (*models.HealthProfile, error)
 	UpsertHealthProfileWithWeightEntry(ctx context.Context, profile *models.HealthProfile, weightEntry *models.WeightEntry) error
@@ -23,6 +23,11 @@ type HealthProfileRepository interface {
 	ListWeightEntriesByUserID(ctx context.Context, userID string) ([]models.WeightEntry, error)
 	CreateActivityEntry(ctx context.Context, entry *models.ActivityEntry) error
 	ListActivityEntriesByUserID(ctx context.Context, userID string) ([]models.ActivityEntry, error)
+	CreateWellnessSnapshot(ctx context.Context, snapshot *models.WellnessSnapshot) error
+	ListWellnessSnapshotsByUserID(ctx context.Context, userID string) ([]models.WellnessSnapshot, error)
+	CreateAIInsightRecord(ctx context.Context, record *models.AIInsightRecord) error
+	FindLatestAIInsightRecordByUserID(ctx context.Context, userID string) (*models.AIInsightRecord, error)
+	ListAIInsightRecordsByUserID(ctx context.Context, userID string) ([]models.AIInsightRecord, error)
 }
 
 // GormHealthProfileRepository implements HealthProfileRepository using a GORM *gorm.DB connection.
@@ -269,4 +274,118 @@ func (repository *GormHealthProfileRepository) ListActivityEntriesByUserID(
 	}
 
 	return entries, nil
+}
+
+// CreateWellnessSnapshot inserts a new historical models.WellnessSnapshot record for a user.
+func (repository *GormHealthProfileRepository) CreateWellnessSnapshot(
+	ctx context.Context,
+	snapshot *models.WellnessSnapshot,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	if snapshot == nil || strings.TrimSpace(snapshot.UserID) == "" {
+		return errors.New("wellness snapshot with non-empty user ID is required")
+	}
+
+	return repository.databaseConnection.WithContext(ctx).Create(snapshot).Error
+}
+
+// ListWellnessSnapshotsByUserID returns all models.WellnessSnapshot records for userID ordered by recorded_at ASC.
+func (repository *GormHealthProfileRepository) ListWellnessSnapshotsByUserID(
+	ctx context.Context,
+	userID string,
+) ([]models.WellnessSnapshot, error) {
+	if repository == nil || repository.databaseConnection == nil {
+		return nil, errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return nil, errors.New("user ID must not be empty")
+	}
+
+	var snapshots []models.WellnessSnapshot
+	queryResult := repository.databaseConnection.WithContext(ctx).
+		Where("user_id = ?", trimmedUserID).
+		Order("recorded_at ASC").
+		Find(&snapshots)
+	if queryResult.Error != nil {
+		return nil, queryResult.Error
+	}
+
+	return snapshots, nil
+}
+
+// CreateAIInsightRecord inserts a new versioned models.AIInsightRecord for a user.
+func (repository *GormHealthProfileRepository) CreateAIInsightRecord(
+	ctx context.Context,
+	record *models.AIInsightRecord,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	if record == nil || strings.TrimSpace(record.UserID) == "" {
+		return errors.New("AI insight record with non-empty user ID is required")
+	}
+
+	return repository.databaseConnection.WithContext(ctx).Create(record).Error
+}
+
+// FindLatestAIInsightRecordByUserID retrieves the highest-version models.AIInsightRecord for userID.
+// Returns (nil, nil) when gorm.ErrRecordNotFound occurs.
+func (repository *GormHealthProfileRepository) FindLatestAIInsightRecordByUserID(
+	ctx context.Context,
+	userID string,
+) (*models.AIInsightRecord, error) {
+	if repository == nil || repository.databaseConnection == nil {
+		return nil, errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return nil, errors.New("user ID must not be empty")
+	}
+
+	var latestRecord models.AIInsightRecord
+	queryResult := repository.databaseConnection.WithContext(ctx).
+		Where("user_id = ?", trimmedUserID).
+		Order("version DESC, created_at DESC").
+		First(&latestRecord)
+	if queryResult.Error != nil {
+		if errors.Is(queryResult.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, queryResult.Error
+	}
+
+	return &latestRecord, nil
+}
+
+// ListAIInsightRecordsByUserID returns all models.AIInsightRecord rows for userID ordered by version DESC.
+func (repository *GormHealthProfileRepository) ListAIInsightRecordsByUserID(
+	ctx context.Context,
+	userID string,
+) ([]models.AIInsightRecord, error) {
+	if repository == nil || repository.databaseConnection == nil {
+		return nil, errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return nil, errors.New("user ID must not be empty")
+	}
+
+	var records []models.AIInsightRecord
+	queryResult := repository.databaseConnection.WithContext(ctx).
+		Where("user_id = ?", trimmedUserID).
+		Order("version DESC").
+		Find(&records)
+	if queryResult.Error != nil {
+		return nil, queryResult.Error
+	}
+
+	return records, nil
 }

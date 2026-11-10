@@ -1,9 +1,11 @@
 // This file implements HTTP handlers for User Health Profile management (GET/POST/PUT /api/health/profile),
 // historical weight tracking (GET/POST /api/health/weight), activity logging (GET/POST /api/health/activity),
-// and GDPR full health data JSON export (GET /api/health/export).
+// GDPR full health data JSON export (GET /api/health/export), health dashboard orchestration (GET /api/health/dashboard),
+// and versioned AI insight regeneration with cached fallback (POST /api/health/insights/regenerate).
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -123,20 +125,45 @@ type GDPRHealthDataExportResponsePayload struct {
 	ActivityEntries []models.ActivityEntry        `json:"activityEntries"`
 }
 
-// HealthProfileHandler handles HTTP requests for user health profiles, weight logs, activity logs, and GDPR exports.
+// HealthDashboardResponsePayload represents the aggregated analytics and AI insights payload returned by GET /api/health/dashboard.
+type HealthDashboardResponsePayload struct {
+	HealthProfile      *HealthProfileResponsePayload `json:"healthProfile"`
+	LatestWellness     *models.WellnessSnapshot      `json:"latestWellness"`
+	WellnessHistory    []models.WellnessSnapshot     `json:"wellnessHistory"`
+	WeightHistory      []models.WeightEntry          `json:"weightHistory"`
+	ActivityHistory    []models.ActivityEntry        `json:"activityHistory"`
+	LatestInsights     *models.AIInsightRecord       `json:"latestInsights"`
+	InsightHistory     []models.AIInsightRecord      `json:"insightHistory"`
+	AIServiceAvailable bool                          `json:"aiServiceAvailable"`
+	IsCachedFallback   bool                          `json:"isCachedFallback"`
+}
+
+// RegenerateAIInsightsResponsePayload represents the JSON response returned by POST /api/health/insights/regenerate.
+type RegenerateAIInsightsResponsePayload struct {
+	LatestInsights     *models.AIInsightRecord  `json:"latestInsights"`
+	InsightHistory     []models.AIInsightRecord `json:"insightHistory"`
+	AIServiceAvailable bool                     `json:"aiServiceAvailable"`
+	IsCachedFallback   bool                     `json:"isCachedFallback"`
+}
+
+// HealthProfileHandler handles HTTP requests for user health profiles, weight logs, activity logs,
+// GDPR exports, wellness score snapshots, and versioned AI insights orchestration.
 type HealthProfileHandler struct {
 	healthProfileRepository repositories.HealthProfileRepository
 	sessionRepository       repositories.UserSessionRepository
+	pyAIClient              health.PyAIAnalyticsClient
 	jwtSecret               string
 	weightTimestampMutex    sync.Mutex
 	lastWeightTimestampUTC  time.Time
 }
 
 // NewHealthProfileHandler constructs a HealthProfileHandler after validating its dependencies.
+// Accepts an optional health.PyAIAnalyticsClient (defaulting to health.NewHTTPPyAIAnalyticsClient when omitted or nil).
 func NewHealthProfileHandler(
 	healthProfileRepository repositories.HealthProfileRepository,
 	sessionRepository repositories.UserSessionRepository,
 	jwtSecret string,
+	optionalPyAIClient ...health.PyAIAnalyticsClient,
 ) (*HealthProfileHandler, error) {
 	if healthProfileRepository == nil {
 		return nil, errors.New("health profile repository must not be nil")
@@ -151,9 +178,17 @@ func NewHealthProfileHandler(
 		return nil, errors.New("JWT secret must not be empty")
 	}
 
+	var configuredPyAIClient health.PyAIAnalyticsClient
+	if len(optionalPyAIClient) > 0 && optionalPyAIClient[0] != nil {
+		configuredPyAIClient = optionalPyAIClient[0]
+	} else {
+		configuredPyAIClient = health.NewHTTPPyAIAnalyticsClient("", nil)
+	}
+
 	return &HealthProfileHandler{
 		healthProfileRepository: healthProfileRepository,
 		sessionRepository:       sessionRepository,
+		pyAIClient:              configuredPyAIClient,
 		jwtSecret:               trimmedJWTSecret,
 	}, nil
 }
@@ -224,6 +259,148 @@ func unmarshalStringSliceJSON(rawJSON string) []string {
 		return []string{}
 	}
 	return parsed
+}
+
+// buildWellnessSnapshotFromCalculation converts a health.WellnessCalculationResult into a models.WellnessSnapshot.
+func (handler *HealthProfileHandler) buildWellnessSnapshotFromCalculation(
+	userID string,
+	result *health.WellnessCalculationResult,
+) *models.WellnessSnapshot {
+	snapshotID, _ := generateRandomUUIDv4()
+	milestones := result.Milestones
+	if milestones == nil {
+		milestones = []health.WellnessMilestone{}
+	}
+	encodedMilestones, encodeErr := json.Marshal(milestones)
+	if encodeErr != nil {
+		encodedMilestones = []byte("[]")
+	}
+
+	return &models.WellnessSnapshot{
+		ID:                snapshotID,
+		UserID:            userID,
+		BMI:               result.BMI,
+		BMIClassification: result.BMIClassification,
+		WellnessScore:     result.WellnessScore,
+		BMIScore:          result.BMIScore,
+		ActivityScore:     result.ActivityScore,
+		ProgressScore:     result.ProgressScore,
+		HabitsScore:       result.HabitsScore,
+		MilestonesJSON:    string(encodedMilestones),
+		RecordedAt:        handler.nextUniqueWeightTimestampUTC(nil),
+	}
+}
+
+// buildAIInsightRecordFromPyAI constructs a new versioned models.AIInsightRecord from a health.PyAIInsightsPayload.
+func buildAIInsightRecordFromPyAI(
+	userID string,
+	version int,
+	primaryGoal string,
+	insights *health.PyAIInsightsPayload,
+) *models.AIInsightRecord {
+	recordID, _ := generateRandomUUIDv4()
+	recommendations := insights.Recommendations
+	if recommendations == nil {
+		recommendations = []health.PrioritizedAIRecommendation{}
+	}
+	encodedRecommendations, encodeErr := json.Marshal(recommendations)
+	if encodeErr != nil {
+		encodedRecommendations = []byte("[]")
+	}
+
+	promptStrategy := strings.TrimSpace(insights.PromptStrategy)
+	if promptStrategy == "" {
+		promptStrategy = "cot_few_shot_v1"
+	}
+
+	return &models.AIInsightRecord{
+		ID:                   recordID,
+		UserID:               userID,
+		Version:              version,
+		PrimaryGoalSnapshot:  strings.TrimSpace(primaryGoal),
+		PromptStrategy:       promptStrategy,
+		HealthStatusAnalysis: strings.TrimSpace(insights.HealthStatusAnalysis),
+		ProgressEvaluation:   strings.TrimSpace(insights.ProgressEvaluation),
+		RecommendationsJSON:  string(encodedRecommendations),
+		WeeklySummary:        strings.TrimSpace(insights.WeeklySummary),
+		MonthlySummary:       strings.TrimSpace(insights.MonthlySummary),
+		CreatedAt:            time.Now().UTC(),
+	}
+}
+
+// recalculateWellnessAndPersistOptionalAIInsights recalculates the user's Wellness Score snapshot
+// (always persisting a new models.WellnessSnapshot on metric changes, falling back to deterministic calculation
+// if py-ai is unavailable or AI processing is disabled) and saves a new versioned models.AIInsightRecord
+// whenever AllowAIProcessing is true, regeneration is needed, and py-ai returns insights.
+func (handler *HealthProfileHandler) recalculateWellnessAndPersistOptionalAIInsights(
+	ctx context.Context,
+	userID string,
+	profileWasUpdated bool,
+	forceRegenerateInsights bool,
+) (*models.WellnessSnapshot, *models.AIInsightRecord, bool) {
+	profileRecord, profileErr := handler.healthProfileRepository.FindHealthProfileByUserID(ctx, userID)
+	if profileErr != nil || profileRecord == nil {
+		return nil, nil, false
+	}
+
+	weights, _ := handler.healthProfileRepository.ListWeightEntriesByUserID(ctx, userID)
+	activities, _ := handler.healthProfileRepository.ListActivityEntriesByUserID(ctx, userID)
+	latestInsight, _ := handler.healthProfileRepository.FindLatestAIInsightRecordByUserID(ctx, userID)
+
+	shouldRequestInsights := profileRecord.AllowAIProcessing && (forceRegenerateInsights ||
+		profileWasUpdated ||
+		latestInsight == nil ||
+		!strings.EqualFold(strings.TrimSpace(latestInsight.PrimaryGoalSnapshot), strings.TrimSpace(profileRecord.PrimaryGoal)))
+
+	var wellnessResult *health.WellnessCalculationResult
+	var pyAIInsights *health.PyAIInsightsPayload
+	aiServiceAvailable := false
+
+	if profileRecord.AllowAIProcessing && handler.pyAIClient != nil {
+		anonPayload, payloadErr := health.BuildAnonymizedAIAnalysisPayload(
+			profileRecord,
+			weights,
+			activities,
+			shouldRequestInsights,
+		)
+		if payloadErr == nil {
+			pyAIResponse, callErr := handler.pyAIClient.AnalyzeUserHealthAndGenerateInsights(ctx, anonPayload)
+			if callErr == nil && pyAIResponse != nil {
+				aiServiceAvailable = true
+				wellnessResult = pyAIResponse.Wellness
+				pyAIInsights = pyAIResponse.Insights
+			}
+		}
+	}
+
+	if wellnessResult == nil {
+		deterministicResult, calcErr := health.CalculateDeterministicWellnessAndMilestones(profileRecord, weights, activities)
+		if calcErr == nil {
+			wellnessResult = deterministicResult
+		}
+	}
+
+	var savedSnapshot *models.WellnessSnapshot
+	if wellnessResult != nil {
+		snapshot := handler.buildWellnessSnapshotFromCalculation(userID, wellnessResult)
+		if createErr := handler.healthProfileRepository.CreateWellnessSnapshot(ctx, snapshot); createErr == nil {
+			savedSnapshot = snapshot
+		}
+	}
+
+	var savedInsight *models.AIInsightRecord
+	if shouldRequestInsights && pyAIInsights != nil {
+		nextVersion := 1
+		if latestInsight != nil && latestInsight.Version >= 1 {
+			nextVersion = latestInsight.Version + 1
+		}
+		newInsightRecord := buildAIInsightRecordFromPyAI(userID, nextVersion, profileRecord.PrimaryGoal, pyAIInsights)
+		if createErr := handler.healthProfileRepository.CreateAIInsightRecord(ctx, newInsightRecord); createErr == nil {
+			savedInsight = newInsightRecord
+		}
+	}
+
+	return savedSnapshot, savedInsight, aiServiceAvailable
 }
 
 // buildHealthProfileResponsePayload converts a models.HealthProfile into a HealthProfileResponsePayload with BMI and decoded arrays.
@@ -468,6 +645,8 @@ func (handler *HealthProfileHandler) HandleSaveHealthProfile(responseWriter http
 		return
 	}
 
+	_, _, _ = handler.recalculateWellnessAndPersistOptionalAIInsights(request.Context(), sessionRecord.UserID, true, false)
+
 	WriteJSONResponse(responseWriter, http.StatusOK, buildHealthProfileResponsePayload(profileRecord))
 }
 
@@ -526,6 +705,8 @@ func (handler *HealthProfileHandler) HandleLogWeightEntry(responseWriter http.Re
 		})
 		return
 	}
+
+	_, _, _ = handler.recalculateWellnessAndPersistOptionalAIInsights(request.Context(), sessionRecord.UserID, false, false)
 
 	WriteJSONResponse(responseWriter, http.StatusCreated, weightEntry)
 }
@@ -638,6 +819,8 @@ func (handler *HealthProfileHandler) HandleLogActivityEntry(responseWriter http.
 		return
 	}
 
+	_, _, _ = handler.recalculateWellnessAndPersistOptionalAIInsights(request.Context(), sessionRecord.UserID, false, false)
+
 	WriteJSONResponse(responseWriter, http.StatusCreated, activityEntry)
 }
 
@@ -740,4 +923,167 @@ func (handler *HealthProfileHandler) HandleExportUserHealthData(responseWriter h
 	}
 
 	WriteJSONResponse(responseWriter, http.StatusOK, exportResponse)
+}
+
+// HandleGetHealthDashboard handles GET /api/health/dashboard:
+// returns the user's HealthProfile, latest WellnessSnapshot, WellnessSnapshot history, WeightEntry history,
+// ActivityEntry history, latest AIInsightRecord, AIInsightRecord history, aiServiceAvailable, and isCachedFallback.
+func (handler *HealthProfileHandler) HandleGetHealthDashboard(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		WriteJSONResponse(responseWriter, http.StatusMethodNotAllowed, MessageOnlyResponsePayload{
+			Message: "only GET method is supported",
+		})
+		return
+	}
+
+	sessionRecord, authError := handler.authenticateSessionFromRequest(request)
+	if authError != nil {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, MessageOnlyResponsePayload{
+			Message: "unauthorized",
+		})
+		return
+	}
+
+	ctx := request.Context()
+	profileRecord, profileErr := handler.healthProfileRepository.FindHealthProfileByUserID(ctx, sessionRecord.UserID)
+	if profileErr != nil {
+		WriteJSONResponse(responseWriter, http.StatusInternalServerError, MessageOnlyResponsePayload{
+			Message: "failed to load health profile",
+		})
+		return
+	}
+
+	if profileRecord == nil {
+		WriteJSONResponse(responseWriter, http.StatusNotFound, MessageOnlyResponsePayload{
+			Message: "health profile not found",
+		})
+		return
+	}
+
+	weightHistory, _ := handler.healthProfileRepository.ListWeightEntriesByUserID(ctx, sessionRecord.UserID)
+	activityHistory, _ := handler.healthProfileRepository.ListActivityEntriesByUserID(ctx, sessionRecord.UserID)
+	wellnessHistory, _ := handler.healthProfileRepository.ListWellnessSnapshotsByUserID(ctx, sessionRecord.UserID)
+	latestInsights, _ := handler.healthProfileRepository.FindLatestAIInsightRecordByUserID(ctx, sessionRecord.UserID)
+
+	aiServiceAvailable := true
+	isCachedFallback := false
+
+	needsInitialWellness := len(wellnessHistory) == 0
+	needsLiveInsights := profileRecord.AllowAIProcessing && (latestInsights == nil ||
+		!strings.EqualFold(strings.TrimSpace(latestInsights.PrimaryGoalSnapshot), strings.TrimSpace(profileRecord.PrimaryGoal)))
+
+	if needsInitialWellness || needsLiveInsights {
+		_, generatedInsight, serviceReachable := handler.recalculateWellnessAndPersistOptionalAIInsights(
+			ctx,
+			sessionRecord.UserID,
+			false,
+			needsLiveInsights,
+		)
+		aiServiceAvailable = serviceReachable
+		if generatedInsight != nil {
+			latestInsights = generatedInsight
+		} else if !serviceReachable && latestInsights != nil {
+			isCachedFallback = true
+		}
+		wellnessHistory, _ = handler.healthProfileRepository.ListWellnessSnapshotsByUserID(ctx, sessionRecord.UserID)
+	}
+
+	insightHistory, _ := handler.healthProfileRepository.ListAIInsightRecordsByUserID(ctx, sessionRecord.UserID)
+
+	var latestWellness *models.WellnessSnapshot
+	if len(wellnessHistory) > 0 {
+		lastSnapshot := wellnessHistory[len(wellnessHistory)-1]
+		latestWellness = &lastSnapshot
+	}
+
+	if wellnessHistory == nil {
+		wellnessHistory = []models.WellnessSnapshot{}
+	}
+	if weightHistory == nil {
+		weightHistory = []models.WeightEntry{}
+	}
+	if activityHistory == nil {
+		activityHistory = []models.ActivityEntry{}
+	}
+	if insightHistory == nil {
+		insightHistory = []models.AIInsightRecord{}
+	}
+
+	builtProfile := buildHealthProfileResponsePayload(profileRecord)
+	dashboardPayload := HealthDashboardResponsePayload{
+		HealthProfile:      &builtProfile,
+		LatestWellness:     latestWellness,
+		WellnessHistory:    wellnessHistory,
+		WeightHistory:      weightHistory,
+		ActivityHistory:    activityHistory,
+		LatestInsights:     latestInsights,
+		InsightHistory:     insightHistory,
+		AIServiceAvailable: aiServiceAvailable,
+		IsCachedFallback:   isCachedFallback,
+	}
+
+	WriteJSONResponse(responseWriter, http.StatusOK, dashboardPayload)
+}
+
+// HandleRegenerateAIInsights handles POST /api/health/insights/regenerate:
+// forces live regeneration of AI insights via py-ai and falls back to the latest cached AIInsightRecord
+// with isCachedFallback: true and 200 OK if py-ai is unavailable.
+func (handler *HealthProfileHandler) HandleRegenerateAIInsights(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		WriteJSONResponse(responseWriter, http.StatusMethodNotAllowed, MessageOnlyResponsePayload{
+			Message: "only POST method is supported",
+		})
+		return
+	}
+
+	sessionRecord, authError := handler.authenticateSessionFromRequest(request)
+	if authError != nil {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, MessageOnlyResponsePayload{
+			Message: "unauthorized",
+		})
+		return
+	}
+
+	ctx := request.Context()
+	profileRecord, profileErr := handler.healthProfileRepository.FindHealthProfileByUserID(ctx, sessionRecord.UserID)
+	if profileErr != nil {
+		WriteJSONResponse(responseWriter, http.StatusInternalServerError, MessageOnlyResponsePayload{
+			Message: "failed to load health profile",
+		})
+		return
+	}
+
+	if profileRecord == nil {
+		WriteJSONResponse(responseWriter, http.StatusNotFound, MessageOnlyResponsePayload{
+			Message: "health profile not found",
+		})
+		return
+	}
+
+	cachedInsightsBeforeCall, _ := handler.healthProfileRepository.FindLatestAIInsightRecordByUserID(ctx, sessionRecord.UserID)
+	_, generatedInsight, serviceReachable := handler.recalculateWellnessAndPersistOptionalAIInsights(
+		ctx,
+		sessionRecord.UserID,
+		false,
+		true,
+	)
+
+	insightHistory, _ := handler.healthProfileRepository.ListAIInsightRecordsByUserID(ctx, sessionRecord.UserID)
+	if insightHistory == nil {
+		insightHistory = []models.AIInsightRecord{}
+	}
+
+	latestInsights := generatedInsight
+	isCachedFallback := false
+	if latestInsights == nil && cachedInsightsBeforeCall != nil {
+		latestInsights = cachedInsightsBeforeCall
+		isCachedFallback = true
+	}
+
+	WriteJSONResponse(responseWriter, http.StatusOK, RegenerateAIInsightsResponsePayload{
+		LatestInsights:     latestInsights,
+		InsightHistory:     insightHistory,
+		AIServiceAvailable: serviceReachable,
+		IsCachedFallback:   isCachedFallback,
+	})
 }

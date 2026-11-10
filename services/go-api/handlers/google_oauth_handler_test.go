@@ -98,40 +98,51 @@ func TestHandleGoogleOAuthLoginSetsStateCookieAndRedirectsToGoogle(testingInstan
 	}
 }
 
+// roundTripperFunc adapts a function into an http.RoundTripper for in-memory HTTP client testing without opening a TCP listener.
+type roundTripperFunc func(req *http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
 // TestHandleGoogleOAuthCallbackStateMismatchNewUserAndExistingUserLinking verifies:
 // 1. State mismatch redirects to /?error=oauth_state_invalid
 // 2. New OAuth user creation (Consented: false) redirects to /dashboard?onboarding=consent
 // 3. Existing user with Consented: true links account and redirects to /dashboard
 func TestHandleGoogleOAuthCallbackStateMismatchNewUserAndExistingUserLinking(testingInstance *testing.T) {
-	mockGoogleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/token":
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"access_token": "mock-google-access-token",
-				"token_type":   "Bearer",
-				"expires_in":   3600,
-			})
-		case "/userinfo":
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(GoogleOpenIDUserInfoPayload{
-				Sub:           "google-sub-12345",
-				Email:         "federated@example.com",
-				EmailVerified: true,
-			})
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer mockGoogleServer.Close()
+	mockGoogleBaseURL := "https://mock.google.oauth.internal"
+	mockGoogleHTTPClient := &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			rec := httptest.NewRecorder()
+			switch r.URL.Path {
+			case "/token":
+				rec.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(rec).Encode(map[string]any{
+					"access_token": "mock-google-access-token",
+					"token_type":   "Bearer",
+					"expires_in":   3600,
+				})
+			case "/userinfo":
+				rec.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(rec).Encode(GoogleOpenIDUserInfoPayload{
+					Sub:           "google-sub-12345",
+					Email:         "federated@example.com",
+					EmailVerified: true,
+				})
+			default:
+				rec.WriteHeader(http.StatusNotFound)
+			}
+			return rec.Result(), nil
+		}),
+	}
 
 	oauthConfig := &oauth2.Config{
 		ClientID:     "google-client-id",
 		ClientSecret: "google-client-secret",
 		RedirectURL:  "http://localhost:3000/api/auth/oauth/google/callback",
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  mockGoogleServer.URL + "/auth",
-			TokenURL: mockGoogleServer.URL + "/token",
+			AuthURL:  mockGoogleBaseURL + "/auth",
+			TokenURL: mockGoogleBaseURL + "/token",
 		},
 	}
 
@@ -146,8 +157,8 @@ func TestHandleGoogleOAuthCallbackStateMismatchNewUserAndExistingUserLinking(tes
 		"http://localhost:3000",
 		false,
 	)
-	oauthHandler.userInfoEndpointURL = mockGoogleServer.URL + "/userinfo"
-	oauthHandler.httpClient = mockGoogleServer.Client()
+	oauthHandler.userInfoEndpointURL = mockGoogleBaseURL + "/userinfo"
+	oauthHandler.httpClient = mockGoogleHTTPClient
 
 	// 1. State mismatch -> redirects to /?error=oauth_state_invalid
 	mismatchReq := httptest.NewRequest(http.MethodGet, "/api/auth/oauth/google/callback?state=wrong&code=abc", nil)

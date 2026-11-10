@@ -117,4 +117,69 @@ func TestGormHealthProfileRepositoryMethodsValidationAndDryRunExecution(testingI
 	if _, listActErr := repository.ListActivityEntriesByUserID(ctx, "user-1"); listActErr != nil {
 		testingInstance.Fatalf("expected dry-run ListActivityEntriesByUserID to succeed, got: %v", listActErr)
 	}
+
+	if err := repository.CreateWellnessSnapshot(ctx, nil); err == nil {
+		testingInstance.Fatal("expected error when snapshot is nil in CreateWellnessSnapshot")
+	}
+
+	snapshot := &models.WellnessSnapshot{
+		ID:                "snapshot-1",
+		UserID:            "user-1",
+		BMI:               22.7,
+		BMIClassification: "normal weight",
+		WellnessScore:     84.5,
+		BMIScore:          95.0,
+		ActivityScore:     80.0,
+		ProgressScore:     75.0,
+		HabitsScore:       85.0,
+		MilestonesJSON:    "[]",
+		RecordedAt:        time.Now().UTC(),
+	}
+	if createSnapErr := repository.CreateWellnessSnapshot(ctx, snapshot); createSnapErr != nil {
+		testingInstance.Fatalf("expected dry-run CreateWellnessSnapshot to succeed, got: %v", createSnapErr)
+	}
+
+	if _, err := repository.ListWellnessSnapshotsByUserID(ctx, ""); err == nil {
+		testingInstance.Fatal("expected error when userID is empty in ListWellnessSnapshotsByUserID")
+	}
+
+	if _, listSnapErr := repository.ListWellnessSnapshotsByUserID(ctx, "user-1"); listSnapErr != nil {
+		testingInstance.Fatalf("expected dry-run ListWellnessSnapshotsByUserID to succeed, got: %v", listSnapErr)
+	}
+
+	if err := repository.CreateAIInsightRecord(ctx, nil); err == nil {
+		testingInstance.Fatal("expected error when record is nil in CreateAIInsightRecord")
+	}
+
+	insightRecord := &models.AIInsightRecord{
+		ID:                   "insight-1",
+		UserID:               "user-1",
+		Version:              1,
+		PrimaryGoalSnapshot:  "weight_loss",
+		PromptStrategy:       "cot_few_shot_v1",
+		HealthStatusAnalysis: "Good baseline",
+		ProgressEvaluation:   "Initial evaluation",
+		RecommendationsJSON:  "[]",
+		WeeklySummary:        "Weekly summary",
+		MonthlySummary:       "Monthly summary",
+	}
+	if createInsightErr := repository.CreateAIInsightRecord(ctx, insightRecord); createInsightErr != nil {
+		testingInstance.Fatalf("expected dry-run CreateAIInsightRecord to succeed, got: %v", createInsightErr)
+	}
+
+	if _, err := repository.FindLatestAIInsightRecordByUserID(ctx, ""); err == nil {
+		testingInstance.Fatal("expected error when userID is empty in FindLatestAIInsightRecordByUserID")
+	}
+
+	if _, findInsightErr := repository.FindLatestAIInsightRecordByUserID(ctx, "user-1"); findInsightErr != nil {
+		testingInstance.Fatalf("expected dry-run FindLatestAIInsightRecordByUserID to succeed, got: %v", findInsightErr)
+	}
+
+	if _, err := repository.ListAIInsightRecordsByUserID(ctx, ""); err == nil {
+		testingInstance.Fatal("expected error when userID is empty in ListAIInsightRecordsByUserID")
+	}
+
+	if _, listInsightErr := repository.ListAIInsightRecordsByUserID(ctx, "user-1"); listInsightErr != nil {
+		testingInstance.Fatalf("expected dry-run ListAIInsightRecordsByUserID to succeed, got: %v", listInsightErr)
+	}
 }

@@ -131,6 +131,8 @@ func CreateApplicationMux(
 				mux.HandleFunc("GET /api/health/activity", typedHandler.HandleListActivityEntries)
 				mux.HandleFunc("POST /api/health/activity", typedHandler.HandleLogActivityEntry)
 				mux.HandleFunc("GET /api/health/export", typedHandler.HandleExportUserHealthData)
+				mux.HandleFunc("GET /api/health/dashboard", typedHandler.HandleGetHealthDashboard)
+				mux.HandleFunc("POST /api/health/insights/regenerate", typedHandler.HandleRegenerateAIInsights)
 			}
 		}
 	}

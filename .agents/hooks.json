@@ -1,16 +1,108 @@
 {
-    "test-gate-before-git" : {
-        "PreToolUse" : [
-            {
-                "matcher": "run_command",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "../scripts/pre-commit-gate.sh",
-                        "timeout": 30
-                    }
-                ]
-            }
+  "_comment": "Lifecycle hooks and permission boundaries for NutriSync (numbers-dont-lie). Uses JSON '_comment' fields so comments remain human-readable while keeping the file 100% valid strict JSON.",
+  "permissions": {
+    "_comment": "Defines static tool-level execution boundaries aligned with AGENTS.md Sections 4, 5, and 8.",
+    "_allow_comment": "Safe, read-only Git inspections, frozen dependency installs, typechecks, linters, unit test runners across all 3 services (Next.js, Go API, Python AI), and read-only MCP lookups.",
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(pnpm install --frozen-lockfile)",
+      "Bash(pnpm exec tsc --noEmit)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm exec eslint *)",
+      "Bash(pnpm test)",
+      "Bash(pnpm exec vitest run *)",
+      "Bash(cd services/go-api && go test *)",
+      "Bash(go test *)",
+      "Bash(cd services/py-ai && .venv/bin/pytest *)",
+      "Bash(.venv/bin/pytest *)",
+      "mcp__context7__*",
+      "mcp__postgres-readonly__query",
+      "mcp__github__get_*",
+      "mcp__github__list_*",
+      "mcp__github__search_*"
+    ],
+    "_ask_comment": "High-risk operations requiring explicit user approval per AGENTS.md Section 5 & 10: modifying dependency manifests, GORM database models/migrations, Docker/infra configs, installing new packages, or creating/pushing Git commits and GitHub mutations.",
+    "ask": [
+      "Edit(package.json)",
+      "Edit(pnpm-lock.yaml)",
+      "Edit(services/go-api/go.mod)",
+      "Edit(services/go-api/go.sum)",
+      "Edit(services/py-ai/requirements.txt)",
+      "Edit(services/go-api/models/*)",
+      "Edit(services/go-api/database/*)",
+      "Edit(Dockerfile)",
+      "Edit(compose.yaml)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm remove *)",
+      "Bash(go get *)",
+      "Bash(pip install *)",
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "mcp__github__create_*",
+      "mcp__github__update_*",
+      "mcp__github__merge_*"
+    ],
+    "_deny_comment": "Strictly prohibited actions per AGENTS.md Section 5 & 8: reading/modifying .env secret files, touching deprecated legacy Prisma files (GORM owns the DB), running destructive shell/Git/Docker volume commands, or using npm/yarn instead of pnpm.",
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(docs/legacy-prisma-schema.prisma)",
+      "Edit(prisma.config.ts)",
+      "Edit(src/generated/prisma/*)",
+      "Bash(rm -rf *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -f*)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(* --no-verify*)",
+      "Bash(npm *)",
+      "Bash(yarn *)",
+      "Bash(docker compose down -v*)"
+    ]
+  },
+  "hooks": {
+    "_comment": "Runtime lifecycle hooks that intercept tool calls before execution (PreToolUse) and run automated quality checks after file edits (PostToolUse).",
+    "PreToolUse": [
+      {
+        "_comment": "Shell Command Safety Guard: Inspects shell commands before execution and hard-blocks '--no-verify', destructive Git resets/cleans/force-pushes, recursive root/workspace deletion ('rm -rf'), wiping the Postgres Docker volume ('docker compose down -v'), and invoking 'npm' or 'yarn' instead of 'pnpm'.",
+        "matcher": "run_command|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(jq -r '.toolCall.args.CommandLine // .tool_input.command // empty'); if printf '%s' \"$CMD\" | grep -qE -- '(--no-verify|git[[:space:]]+reset[[:space:]]+--hard|git[[:space:]]+clean[[:space:]]+-[a-zA-Z]*f|git[[:space:]]+push[[:space:]]+(--force|-f)|rm[[:space:]]+-rf[[:space:]]+(/|\\*|\\.)|docker[[:space:]]+compose[[:space:]]+down[[:space:]]+(-v|--volumes)|(^|[[:space:]|;&])(npm|yarn)[[:space:]]+(install|i|add|run|test|build|dev))'; then printf '{\"decision\":\"deny\",\"reason\":\"Blocked by AGENTS.md safety rules (destructive command, --no-verify, or disallowed package manager).\"}\\n'; else printf '{\"decision\":\"allow\"}\\n'; fi",
+            "timeout": 10
+          }
         ]
-    }
+      },
+      {
+        "_comment": "Protected File Guard: Inspects file read/edit/write calls. Blocks reading or editing any '.env' secret file (except '.env.example') to prevent secret exposure, and blocks edits to legacy Prisma files so database changes stay exclusively in Go GORM.",
+        "matcher": "read_file|edit_file|write_file|Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.toolCall.args.Path // .tool_input.file_path // empty'); BASE=$(basename \"$FILE\"); if [ \"$BASE\" = \".env\" ] || (printf '%s' \"$BASE\" | grep -qE '^\\.env\\.' && [ \"$BASE\" != \".env.example\" ]); then printf '{\"decision\":\"deny\",\"reason\":\"Blocked by AGENTS.md Section 5: Reading or modifying .env files is prohibited.\"}\\n'; elif printf '%s' \"$FILE\" | grep -qE '(legacy-prisma-schema\\.prisma|prisma\\.config\\.ts|src/generated/prisma/)'; then printf '{\"decision\":\"deny\",\"reason\":\"Blocked by AGENTS.md Section 8: Legacy Prisma files are read-only; use GORM in services/go-api.\"}\\n'; else printf '{\"decision\":\"allow\"}\\n'; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "_comment": "Polyglot Auto-Linter & Formatter: Runs automatically after any file edit/write. Runs ESLint '--fix' on TypeScript/React files (.ts/.tsx), 'gofmt -w' on Go files (.go), and bytecode syntax validation ('py_compile') on Python files (.py), then returns '{}' per the PostToolUse stdout contract.",
+        "matcher": "edit_file|write_file|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.toolCall.args.Path // .tool_input.file_path // empty'); case \"$FILE\" in *.ts|*.tsx) pnpm exec eslint --fix \"$FILE\" >/dev/null 2>&1 || true ;; *.go) gofmt -w \"$FILE\" >/dev/null 2>&1 || true ;; *.py) services/py-ai/.venv/bin/python -m py_compile \"$FILE\" >/dev/null 2>&1 || true ;; esac; printf '{}\\n'",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
 }

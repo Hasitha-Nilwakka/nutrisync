@@ -5,7 +5,8 @@ description: >-
   accepted ADRs (docs/adr/), and active feature specs (docs/specs/) before PR creation.
 subagent: true
 mainAgent: false
-tools: [read_file, run_command, call_mcp_tool]
+tools: [read_file, run_command]
+enableMCPTools: true
 ---
 
 # Adversarial Security, Privacy & Spec Auditor Subagent (`security-auditor`)

@@ -5,7 +5,8 @@ description: >-
   inspecting live PostgreSQL schemas and library docs via MCP, and locating canonical code patterns without modifying files.
 subagent: true
 mainAgent: false
-tools: [read_file, search_web, call_mcp_tool, list_resources, read_resource]
+tools: [read_file, search_web]
+enableMCPTools: true
 ---
 
 # Codebase & Schema Explorer Subagent (`explorer`)

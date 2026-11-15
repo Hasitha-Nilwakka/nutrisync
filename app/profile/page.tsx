@@ -1,10 +1,12 @@
-// Profile route (/profile) page rendering the user profile wireframe with the Enable 2 Factor Authentication button.
-import EnableTwoFactorButton from "@/feature/profile/EnableTwoFactorButton"
+// Protected /profile route: verifies server-side session via requireAuthentication()
+// before rendering ProfilePageClient for 2FA security, health profile settings, and GDPR export.
+import { ProfilePageClient } from "@/feature/profile/ProfilePageClient"
+import { requireAuthentication } from "@/lib/auth/requireAuthentication"
 
-export default function ProfilePage() {
-  return (
-    <div className="mx-auto flex min-h-[calc(100dvh-8rem)] w-full max-w-4xl flex-col items-start justify-start gap-6 px-4 py-8 sm:px-6 lg:px-8">
-      <EnableTwoFactorButton />
-    </div>
-  )
+export const instant = false
+
+export default async function ProfilePage() {
+  const session = await requireAuthentication()
+
+  return <ProfilePageClient session={session} />
 }

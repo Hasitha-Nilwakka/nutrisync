@@ -45,3 +45,5 @@ next-env.d.ts
 
 .venv/
 __pycache__/
+services/py-ai/training/data/*.jsonl
+services/py-ai/training/outputs/

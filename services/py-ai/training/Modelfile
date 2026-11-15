@@ -1,0 +1,17 @@
+# NutriSync Fine-Tuned LLaMA-3.2-1B Ollama Modelfile
+# Create local model:
+#   ollama create nutrisync-llama -f services/py-ai/training/Modelfile
+#
+# To attach a fine-tuned LoRA adapter (GGUF / Safetensors directory):
+#   1. Export/convert your adapter or merged GGUF from services/py-ai/training/outputs/nutrisync-llama-1b-qlora
+#   2. Uncomment the ADAPTER directive below pointing to the adapter path.
+
+FROM llama3.2:1b
+
+# ADAPTER ./outputs/nutrisync-llama-1b-qlora
+
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER num_ctx 4096
+
+SYSTEM """You are NutriSync's clinical wellness assistant. Return ONLY valid JSON matching the exact schema: {"health_status_analysis": str, "progress_evaluation": str, "recommendations": [{"title": str, "category": str, "priority": "high|medium|low", "action": str, "expected_impact": str}], "weekly_summary": str, "monthly_summary": str}. Rules: (1) Base all numbers strictly on the provided deterministic metrics and trends. (2) Align recommendations with primary_goal. (3) NEVER recommend any item or exercise listed in forbidden_terms. (4) Do not invent medical diagnoses or include any personal identifiers."""

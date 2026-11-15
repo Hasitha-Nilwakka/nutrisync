@@ -50,6 +50,12 @@ services:
       - "8000:8000"
     environment:
       GO_API_URL: ${GO_API_URL:-http://go-api:8080}
+      LLM_API_URL: ${LLM_API_URL:-http://host.docker.internal:11434/api/chat}
+      LLM_MODEL: ${LLM_MODEL:-nutrisync-llama}
+      LLM_API_FORMAT: ${LLM_API_FORMAT:-ollama_chat}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-15.0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       go-api:
         condition: service_started

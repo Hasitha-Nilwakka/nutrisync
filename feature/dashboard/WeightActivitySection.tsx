@@ -13,6 +13,8 @@ import { Label } from "@/components/ui/label"
 import { showAPIResponseToast } from "@/components/ui/showToast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { ActivityTrendChart } from "@/feature/dashboard/charts/ActivityTrendChart"
+import { WeightTrendChart } from "@/feature/dashboard/charts/WeightTrendChart"
 import {
   ACTIVITY_INTENSITY_LABELS,
   ACTIVITY_INTENSITY_OPTIONS,
@@ -30,6 +32,7 @@ interface WeightActivitySectionProps {
   weightHistory: WeightEntryPayload[]
   activityHistory: ActivityEntryPayload[]
   preferredWeightUnit: string
+  targetWeightKg?: number | null
   onEntryLogged: () => Promise<void>
 }
 
@@ -39,57 +42,11 @@ function getCurrentLocalDateTimeInput(): string {
   return new Date(now.getTime() - offsetMs).toISOString().slice(0, 16)
 }
 
-function WeightSparkline({ entries }: { entries: WeightEntryPayload[] }) {
-  if (entries.length < 2) {
-    return null
-  }
-
-  const ordered = [...entries].sort(
-    (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
-  )
-  const values = ordered.map((item) => item.weightKg)
-  const minVal = Math.min(...values)
-  const maxVal = Math.max(...values)
-  const range = maxVal - minVal || 1
-  const width = 260
-  const height = 56
-  const padding = 6
-
-  const points = ordered
-    .map((entry, idx) => {
-      const x = padding + (idx / (ordered.length - 1)) * (width - padding * 2)
-      const y = height - padding - ((entry.weightKg - minVal) / range) * (height - padding * 2)
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(" ")
-
-  return (
-    <div className="rounded-lg border bg-muted/20 p-3">
-      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>Weight Trend ({ordered.length} entries)</span>
-        <span>
-          {minVal.toFixed(1)}–{maxVal.toFixed(1)} kg
-        </span>
-      </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-14 w-full overflow-visible" aria-label="Weight trend chart">
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-primary"
-          points={points}
-        />
-      </svg>
-    </div>
-  )
-}
-
 export function WeightActivitySection({
   weightHistory,
   activityHistory,
   preferredWeightUnit,
+  targetWeightKg = null,
   onEntryLogged,
 }: WeightActivitySectionProps) {
   const [activityConflictError, setActivityConflictError] = useState<string | null>(null)
@@ -196,7 +153,7 @@ export function WeightActivitySection({
   )
 
   return (
-    <section className="rounded-xl border bg-card p-6 shadow-xs">
+    <section className="rounded-2xl border border-border/80 bg-card p-6 shadow-sm">
       <Tabs defaultValue="weight">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight">Weight & Activity Logs</h2>
@@ -267,7 +224,11 @@ export function WeightActivitySection({
           </form>
 
           <div className="space-y-3">
-            <WeightSparkline entries={weightHistory} />
+            <WeightTrendChart
+              entries={weightHistory}
+              preferredWeightUnit={preferredWeightUnit}
+              targetWeightKg={targetWeightKg}
+            />
 
             <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
               {sortedWeights.length === 0 ? (
@@ -386,7 +347,10 @@ export function WeightActivitySection({
             </Button>
           </form>
 
-          <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+          <div className="space-y-3">
+            <ActivityTrendChart entries={activityHistory} />
+
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
             {sortedActivities.length === 0 ? (
               <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
                 No activity entries logged yet.
@@ -413,6 +377,7 @@ export function WeightActivitySection({
                 </div>
               ))
             )}
+            </div>
           </div>
         </TabsContent>
       </Tabs>

@@ -115,7 +115,7 @@ export function AiInsightsPanel({
     : []
 
   return (
-    <section className="flex flex-col gap-5 rounded-xl border bg-card p-6 shadow-xs">
+    <section className="flex flex-col gap-5 rounded-2xl border border-border/80 bg-card p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">

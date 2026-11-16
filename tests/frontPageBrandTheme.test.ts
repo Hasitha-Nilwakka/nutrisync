@@ -41,7 +41,7 @@ describe("Light & Dark mode CSS tokens and layout wiring", () => {
     expect(layout).toContain('attribute="class"');
   });
 
-  it("places ThemeToggle on the landing header only", () => {
+  it("places ThemeToggle on both the landing header and dashboard header", () => {
     const landingHeader = readFileSync(
       resolve(ROOT, "feature/landing/LandingHeader.tsx"),
       "utf8"
@@ -51,6 +51,6 @@ describe("Light & Dark mode CSS tokens and layout wiring", () => {
       "utf8"
     );
     expect(landingHeader).toContain("ThemeToggle");
-    expect(dashboardClient).not.toContain("ThemeToggle");
+    expect(dashboardClient).toContain("ThemeToggle");
   });
 });

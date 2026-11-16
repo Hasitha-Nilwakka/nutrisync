@@ -17,11 +17,11 @@ import (
 
 const (
 	// TwoFactorPreAuthScope is the JWT scope claim required for pre-authenticated 2FA login verification tickets.
-	TwoFactorPreAuthScope             = "2fa_preauth"
-	defaultTwoFactorTicketTimeToLive  = 5 * time.Minute
-	defaultTOTPIssuerName             = "NutriSync"
-	totpSecretSizeInBytes             = 20
-	totpQRCodeImageDimensionInPixels  = 200
+	TwoFactorPreAuthScope            = "2fa_preauth"
+	defaultTwoFactorTicketTimeToLive = 5 * time.Minute
+	defaultTOTPIssuerName            = "NutriSync"
+	totpSecretSizeInBytes            = 20
+	totpQRCodeImageDimensionInPixels = 200
 )
 
 // TwoFactorTicketClaims represents the JWT payload claims signed into a short-lived 2FA login ticket.

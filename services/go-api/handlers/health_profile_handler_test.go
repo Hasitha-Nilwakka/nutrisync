@@ -21,11 +21,11 @@ import (
 )
 
 type inMemoryHealthProfileRepository struct {
-	profilesByUserID  map[string]*models.HealthProfile
-	weightsByUserID   map[string][]models.WeightEntry
-	activityByUserID  map[string][]models.ActivityEntry
-	wellnessByUserID  map[string][]models.WellnessSnapshot
-	insightsByUserID  map[string][]models.AIInsightRecord
+	profilesByUserID map[string]*models.HealthProfile
+	weightsByUserID  map[string][]models.WeightEntry
+	activityByUserID map[string][]models.ActivityEntry
+	wellnessByUserID map[string][]models.WellnessSnapshot
+	insightsByUserID map[string][]models.AIInsightRecord
 }
 
 func newInMemoryHealthProfileRepository() *inMemoryHealthProfileRepository {
@@ -287,11 +287,11 @@ func TestHealthProfileHandlerImperialConversionInvalidBMIAndDuplicateActivityCon
 }
 
 // TestHealthProfileHandlerWellnessRecalculationGoalChangeVersioningAndCachedFallback verifies:
-// 1. Outbound py-ai payloads strip PII (email, raw user ID, session ID)
-// 2. Saving a profile, logging activity, and logging weight each append a recalculated WellnessSnapshot
-// 3. Updating PrimaryGoal triggers a new versioned AIInsightRecord (Version = prevVersion + 1)
-// 4. When py-ai returns an error, GET /api/health/dashboard and POST /api/health/insights/regenerate
-//    gracefully serve the latest cached AIInsightRecord with isCachedFallback: true and 200 OK
+//  1. Outbound py-ai payloads strip PII (email, raw user ID, session ID)
+//  2. Saving a profile, logging activity, and logging weight each append a recalculated WellnessSnapshot
+//  3. Updating PrimaryGoal triggers a new versioned AIInsightRecord (Version = prevVersion + 1)
+//  4. When py-ai returns an error, GET /api/health/dashboard and POST /api/health/insights/regenerate
+//     gracefully serve the latest cached AIInsightRecord with isCachedFallback: true and 200 OK
 func TestHealthProfileHandlerWellnessRecalculationGoalChangeVersioningAndCachedFallback(testingInstance *testing.T) {
 	jwtSecret := "test-orchestrator-jwt-secret"
 	userID := "secret-raw-user-uuid-999"
@@ -323,20 +323,20 @@ func TestHealthProfileHandlerWellnessRecalculationGoalChangeVersioningAndCachedF
 
 	// Step 1: Save initial profile (PrimaryGoal = "weight_loss")
 	initialProfile := SaveHealthProfileRequestPayload{
-		Age:                30,
-		Gender:             "female",
-		Height:             165.0,
-		HeightUnit:         "cm",
-		CurrentWeight:      75.0,
-		TargetWeight:       63.0,
-		WeightUnit:         "kg",
-		ActivityLevel:      "lightly_active",
-		PrimaryGoal:        "weight_loss",
+		Age:                 30,
+		Gender:              "female",
+		Height:              165.0,
+		HeightUnit:          "cm",
+		CurrentWeight:       75.0,
+		TargetWeight:        63.0,
+		WeightUnit:          "kg",
+		ActivityLevel:       "lightly_active",
+		PrimaryGoal:         "weight_loss",
 		TargetActivityLevel: "moderately_active",
-		TargetWeeklyDays:   4,
-		WeeklyActivityDays: 1,
-		SleepHours:         7.0,
-		WaterLiters:        2.0,
+		TargetWeeklyDays:    4,
+		WeeklyActivityDays:  1,
+		SleepHours:          7.0,
+		WaterLiters:         2.0,
 	}
 	profileBody, _ := json.Marshal(initialProfile)
 	profileReq := httptest.NewRequest(http.MethodPost, "/api/health/profile", bytes.NewReader(profileBody))

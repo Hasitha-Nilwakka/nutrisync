@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	defaultAccessTokenTimeToLive  = 15 * time.Minute
-	refreshTokenSecretByteLength  = 32
-	compositeCookieSeparator      = "."
+	defaultAccessTokenTimeToLive = 15 * time.Minute
+	refreshTokenSecretByteLength = 32
+	compositeCookieSeparator     = "."
 )
 
 // AccessTokenClaims represents the JWT payload claims signed into an access token.

@@ -111,9 +111,9 @@ type LogActivityEntryRequestPayload struct {
 
 // GDPRUserMetadataExportPayload represents the user metadata section in GET /api/health/export.
 type GDPRUserMetadataExportPayload struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Consented bool      `json:"consented"`
+	ID         string    `json:"id"`
+	Email      string    `json:"email"`
+	Consented  bool      `json:"consented"`
 	ExportedAt time.Time `json:"exportedAt"`
 }
 

@@ -27,7 +27,7 @@ func (Session) TableName() string {
 // RefreshToken represents a hashed refresh token belonging to a Session in the "refresh_tokens" table.
 // Supports single-use token rotation and reuse detection via ReplacedByTokenID and Revoked flags.
 type RefreshToken struct {
-	ID                string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	ID string `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	// TokenHash stores the SHA-256 hex digest of the raw refresh token secret and is excluded from JSON output.
 	TokenHash         string    `gorm:"column:token_hash;not null" json:"-"`
 	SessionID         string    `gorm:"column:session_id;type:uuid;not null;index" json:"sessionId"`

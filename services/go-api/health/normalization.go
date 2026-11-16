@@ -10,17 +10,17 @@ import (
 )
 
 const (
-	kilogramsPerPound     = 0.45359237
-	centimetersPerInch    = 2.54
-	minimumValidWeightKg  = 20.0
-	maximumValidWeightKg  = 350.0
-	minimumValidHeightCm  = 80.0
-	maximumValidHeightCm  = 260.0
-	minimumValidBMIValue  = 10.0
-	maximumValidBMIValue  = 80.0
-	underweightBMILimit   = 18.5
-	normalWeightBMILimit  = 25.0
-	overweightBMILimit    = 30.0
+	kilogramsPerPound    = 0.45359237
+	centimetersPerInch   = 2.54
+	minimumValidWeightKg = 20.0
+	maximumValidWeightKg = 350.0
+	minimumValidHeightCm = 80.0
+	maximumValidHeightCm = 260.0
+	minimumValidBMIValue = 10.0
+	maximumValidBMIValue = 80.0
+	underweightBMILimit  = 18.5
+	normalWeightBMILimit = 25.0
+	overweightBMILimit   = 30.0
 )
 
 // roundToTwoDecimalPlaces rounds a floating-point number to 2 decimal places.

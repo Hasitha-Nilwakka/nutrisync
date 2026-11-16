@@ -19,9 +19,15 @@ func TestBuildRegistrationVerificationEmailMessageIncludesExpectedVerificationLi
 	)
 
 	messageString := string(messageBytes)
-	expectedAnchor := `<a href="http://localhost:3000/api/auth/verify?token=token-12345">Verify Email</a>`
-	if !strings.Contains(messageString, expectedAnchor) {
-		testingInstance.Errorf("expected email message to contain %q, got %q", expectedAnchor, messageString)
+	expectedURL := "http://localhost:3000/verify-email?token=token-12345"
+	if !strings.Contains(messageString, expectedURL) {
+		testingInstance.Errorf("expected email message to contain %q, got %q", expectedURL, messageString)
+	}
+	if !strings.Contains(messageString, `Content-Type: multipart/alternative`) {
+		testingInstance.Errorf("expected multipart/alternative content type, got %q", messageString)
+	}
+	if !strings.Contains(messageString, "24 hours") {
+		testingInstance.Errorf("expected 24 hours expiration notice, got %q", messageString)
 	}
 }
 
@@ -63,7 +69,7 @@ func TestGmailSMTPVerificationEmailSenderSendsFormattedEmailViaSMTP(testingInsta
 		testingInstance.Errorf("expected recipient [newuser@example.com], got %v", capturedRecipients)
 	}
 
-	expectedLink := `<a href="http://localhost:3000/api/auth/verify?token=abc123token">Verify Email</a>`
+	expectedLink := "http://localhost:3000/verify-email?token=abc123token"
 	if !strings.Contains(capturedMessage, expectedLink) {
 		testingInstance.Errorf("expected email body to contain %q, got %q", expectedLink, capturedMessage)
 	}

@@ -14,7 +14,22 @@ import { RegisterFormData, registerFormSchema } from "@/lib/schemas/registerUser
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, SubmitHandler } from "react-hook-form"
 import { Spinner } from "@/components/ui/spinner"
+import { type APIResponse, showAPIResponseToast } from "@/components/ui/showToast"
 import axios from "axios"
+
+function isAPIResponse(payload: unknown): payload is APIResponse {
+    if (!payload || typeof payload !== "object") {
+        return false
+    }
+    const candidate = payload as Record<string, unknown>
+    return (
+        (candidate.type === "success" ||
+            candidate.type === "info" ||
+            candidate.type === "error") &&
+        typeof candidate.title === "string" &&
+        typeof candidate.message === "string"
+    )
+}
 
 export default function RegistrationForm() {
     const {register, handleSubmit, reset, formState : {errors, isSubmitting}, setError} = useForm<RegisterFormData>({
@@ -31,14 +46,33 @@ export default function RegistrationForm() {
     //Submit the form
     const onSubmit : SubmitHandler<RegisterFormData> = async (data) => {
         try {
-            await axios.post(
+            const response = await axios.post(
                 '/api/auth/register',
                 data
             )
-            alert('user registered')
+            const toastPayload: APIResponse = isAPIResponse(response.data)
+                ? response.data
+                : {
+                    type: "success",
+                    title: "Registration Successful",
+                    message: "Account created. Please check your email to verify your address.",
+                }
+            showAPIResponseToast(toastPayload)
+            reset()
         } catch(error) {
-            const message = axios.isAxiosError(error) ? error.response?.data?.message : "Registration failed"
-            setError("root", {message : message})
+            const responseData = axios.isAxiosError(error) ? error.response?.data : undefined
+            const toastPayload: APIResponse = isAPIResponse(responseData)
+                ? responseData
+                : {
+                    type: "error",
+                    title: "Registration Failed",
+                    message:
+                        axios.isAxiosError(error) && typeof error.response?.data?.message === "string"
+                            ? error.response.data.message
+                            : "Unable to complete registration. Please try again.",
+                }
+            showAPIResponseToast(toastPayload)
+            setError("root", { message: toastPayload.message })
         }
     }
     return (

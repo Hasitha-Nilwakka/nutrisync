@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { registerFormSchema } from "../lib/schemas/registerUserSchema";
 import { loginUserSchema } from "../lib/schemas/loginUserSchema";
 import { describe, expect, it } from "vitest";
@@ -41,5 +43,35 @@ describe("Authentication Zod schema validation", () => {
       password: "short",
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("Registration and email verification UI wiring", () => {
+  const repoRoot = path.resolve(__dirname, "..");
+
+  it("uses showAPIResponseToast instead of alert() in Register.tsx", () => {
+    const registerSource = fs.readFileSync(
+      path.join(repoRoot, "feature/auth/register/Register.tsx"),
+      "utf8"
+    );
+    expect(registerSource).toContain("showAPIResponseToast");
+    expect(registerSource).not.toContain("alert(");
+  });
+
+  it("wraps VerifyEmailStatus in Suspense and calls /api/auth/verify", () => {
+    const pageSource = fs.readFileSync(
+      path.join(repoRoot, "app/verify-email/page.tsx"),
+      "utf8"
+    );
+    expect(pageSource).toContain("<Suspense");
+    expect(pageSource).toContain("<VerifyEmailStatus");
+
+    const statusSource = fs.readFileSync(
+      path.join(repoRoot, "feature/auth/register/VerifyEmailStatus.tsx"),
+      "utf8"
+    );
+    expect(statusSource).toContain('.get("/api/auth/verify"');
+    expect(statusSource).toContain("verificationRequestCache");
+    expect(statusSource).toContain("verifyEmailTokenOnce");
   });
 });

@@ -121,6 +121,11 @@ func CreateApplicationMux(
 				mux.HandleFunc("POST /api/auth/2fa/disable", typedHandler.HandleTwoFactorDisableRequest)
 				mux.HandleFunc("POST /api/auth/2fa/login-verify", typedHandler.HandleTwoFactorLoginVerifyRequest)
 			}
+		case *handlers.PasswordResetHandler:
+			if typedHandler != nil {
+				mux.HandleFunc("POST /api/auth/passwordreset", typedHandler.HandleRequestPasswordReset)
+				mux.HandleFunc("POST /api/auth/passwordreset/confirm", typedHandler.HandleConfirmPasswordReset)
+			}
 		case *handlers.HealthProfileHandler:
 			if typedHandler != nil {
 				mux.HandleFunc("GET /api/health/profile", typedHandler.HandleGetHealthProfile)
@@ -148,6 +153,7 @@ func main() {
 	var googleOAuthHandler *handlers.GoogleOAuthHandler
 	var githubOAuthHandler *handlers.GitHubOAuthHandler
 	var twoFactorHandler *handlers.TwoFactorHandler
+	var passwordResetHandler *handlers.PasswordResetHandler
 	var healthProfileHandler *handlers.HealthProfileHandler
 
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
@@ -268,6 +274,21 @@ func main() {
 		}
 		twoFactorHandler = initializedTwoFactorHandler
 
+		passwordResetRepository, passwordResetRepoError := repositories.NewGormPasswordResetRepository(databaseConnection)
+		if passwordResetRepoError != nil {
+			log.Fatalf("Failed to initialize password reset repository: %v", passwordResetRepoError)
+		}
+
+		passwordResetEmailSender := auth.NewGmailSMTPPasswordResetEmailSender()
+		initializedPasswordResetHandler, passwordResetHandlerError := handlers.NewPasswordResetHandler(
+			passwordResetRepository,
+			passwordResetEmailSender,
+		)
+		if passwordResetHandlerError != nil {
+			log.Fatalf("Failed to initialize password reset handler: %v", passwordResetHandlerError)
+		}
+		passwordResetHandler = initializedPasswordResetHandler
+
 		healthProfileRepository, healthRepoError := repositories.NewGormHealthProfileRepository(databaseConnection)
 		if healthRepoError != nil {
 			log.Fatalf("Failed to initialize health profile repository: %v", healthRepoError)
@@ -290,6 +311,7 @@ func main() {
 		googleOAuthHandler,
 		githubOAuthHandler,
 		twoFactorHandler,
+		passwordResetHandler,
 		healthProfileHandler,
 	)
 

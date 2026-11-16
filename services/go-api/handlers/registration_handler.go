@@ -67,7 +67,7 @@ func ValidateUserRegistrationRequestPayload(payload UserRegistrationRequestPaylo
 		return errors.New("invalid email format")
 	}
 
-	if trimmedEmail != strings.TrimSpace(payload.ConfirmEmail) {
+	if !strings.EqualFold(trimmedEmail, strings.TrimSpace(payload.ConfirmEmail)) {
 		return errors.New("email and confirmEmail do not match")
 	}
 
@@ -115,7 +115,7 @@ func (handler *UserRegistrationHandler) HandleUserRegistrationRequest(responseWr
 		return
 	}
 
-	normalizedEmail := strings.TrimSpace(registrationPayload.Email)
+	normalizedEmail := strings.ToLower(strings.TrimSpace(registrationPayload.Email))
 	existingUser, lookupError := handler.userRegistrationRepository.FindUserByEmailAddress(normalizedEmail)
 	if lookupError != nil && !errors.Is(lookupError, gorm.ErrRecordNotFound) {
 		WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
@@ -127,6 +127,47 @@ func (handler *UserRegistrationHandler) HandleUserRegistrationRequest(responseWr
 	}
 
 	if existingUser != nil {
+		if !existingUser.Verified {
+			newVerificationToken, newExpirationTime, tokenError := auth.GenerateEmailVerificationTokenAndExpiryDate(emailVerificationTokenValidityDuration)
+			if tokenError != nil {
+				WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+					Type:    "error",
+					Title:   "Registration Failed",
+					Message: "failed to generate email verification token",
+				})
+				return
+			}
+
+			if refreshError := handler.userRegistrationRepository.RefreshVerificationToken(
+				existingUser.ID,
+				newVerificationToken,
+				newExpirationTime,
+			); refreshError != nil {
+				WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+					Type:    "error",
+					Title:   "Registration Failed",
+					Message: "failed to refresh verification token",
+				})
+				return
+			}
+
+			if emailError := handler.verificationEmailSender.SendRegistrationVerificationEmail(existingUser.Email, newVerificationToken); emailError != nil {
+				WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+					Type:    "error",
+					Title:   "Registration Failed",
+					Message: "failed to send verification email",
+				})
+				return
+			}
+
+			WriteJSONResponse(responseWriter, http.StatusOK, StandardAPIResponsePayload{
+				Type:    "info",
+				Title:   "Verification Pending",
+				Message: "Your account is already awaiting verification. We've sent a new verification link to your email.",
+			})
+			return
+		}
+
 		WriteJSONResponse(responseWriter, http.StatusConflict, StandardAPIResponsePayload{
 			Type:    "error",
 			Title:   "Registration Failed",
@@ -174,6 +215,7 @@ func (handler *UserRegistrationHandler) HandleUserRegistrationRequest(responseWr
 	}
 
 	if emailError := handler.verificationEmailSender.SendRegistrationVerificationEmail(normalizedEmail, verificationToken); emailError != nil {
+		_ = handler.userRegistrationRepository.DeleteUnverifiedUserRecord(newUserRecord.ID)
 		WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
 			Type:    "error",
 			Title:   "Registration Failed",

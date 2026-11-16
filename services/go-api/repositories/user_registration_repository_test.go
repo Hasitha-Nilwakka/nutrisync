@@ -167,3 +167,45 @@ func TestMarkUserEmailAsVerifiedValidationAndUpdateExecution(testingInstance *te
 		testingInstance.Fatalf("expected dry-run MarkUserEmailAsVerified to succeed, got: %v", updateError)
 	}
 }
+
+// TestDeleteUnverifiedUserRecordValidationAndExecution verifies nil/empty validation and dry-run execution
+// for DeleteUnverifiedUserRecord.
+func TestDeleteUnverifiedUserRecordValidationAndExecution(testingInstance *testing.T) {
+	nilDatabaseRepository := NewGormUserRegistrationRepository(nil)
+	if err := nilDatabaseRepository.DeleteUnverifiedUserRecord("user-uuid"); err == nil {
+		testingInstance.Fatal("expected error when database connection is nil")
+	}
+
+	dryRunDatabase := createDryRunGormDatabaseConnection(testingInstance)
+	repository := NewGormUserRegistrationRepository(dryRunDatabase)
+
+	if err := repository.DeleteUnverifiedUserRecord("   "); err == nil {
+		testingInstance.Fatal("expected error when userID is blank")
+	}
+
+	if err := repository.DeleteUnverifiedUserRecord("11111111-1111-1111-1111-111111111111"); err != nil {
+		testingInstance.Fatalf("expected dry-run DeleteUnverifiedUserRecord to succeed, got: %v", err)
+	}
+}
+
+// TestRefreshVerificationTokenValidationAndExecution verifies nil/empty validation and dry-run execution
+// for RefreshVerificationToken.
+func TestRefreshVerificationTokenValidationAndExecution(testingInstance *testing.T) {
+	expiry := time.Now().UTC().Add(24 * time.Hour)
+
+	nilDatabaseRepository := NewGormUserRegistrationRepository(nil)
+	if err := nilDatabaseRepository.RefreshVerificationToken("user-uuid", "token", expiry); err == nil {
+		testingInstance.Fatal("expected error when database connection is nil")
+	}
+
+	dryRunDatabase := createDryRunGormDatabaseConnection(testingInstance)
+	repository := NewGormUserRegistrationRepository(dryRunDatabase)
+
+	if err := repository.RefreshVerificationToken(" ", "token", expiry); err == nil {
+		testingInstance.Fatal("expected error when userID is blank")
+	}
+
+	if err := repository.RefreshVerificationToken("11111111-1111-1111-1111-111111111111", "new-token", expiry); err != nil {
+		testingInstance.Fatalf("expected dry-run RefreshVerificationToken to succeed, got: %v", err)
+	}
+}

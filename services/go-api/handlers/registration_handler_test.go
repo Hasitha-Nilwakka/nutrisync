@@ -24,6 +24,11 @@ type mockUserRegistrationRepository struct {
 	findByTokenError        error
 	verifiedUserID          string
 	markVerifiedError       error
+	deletedUserID           string
+	deleteUserError         error
+	refreshedUserID         string
+	refreshedToken          string
+	refreshTokenError       error
 }
 
 func (mockRepo *mockUserRegistrationRepository) FindUserByEmailAddress(emailAddress string) (*models.User, error) {
@@ -37,7 +42,27 @@ func (mockRepo *mockUserRegistrationRepository) CreateUnverifiedUserRecord(user 
 	if mockRepo.createUserError != nil {
 		return mockRepo.createUserError
 	}
+	if user.ID == "" {
+		user.ID = "created-user-id"
+	}
 	mockRepo.createdUser = user
+	return nil
+}
+
+func (mockRepo *mockUserRegistrationRepository) DeleteUnverifiedUserRecord(userID string) error {
+	if mockRepo.deleteUserError != nil {
+		return mockRepo.deleteUserError
+	}
+	mockRepo.deletedUserID = userID
+	return nil
+}
+
+func (mockRepo *mockUserRegistrationRepository) RefreshVerificationToken(userID string, verificationToken string, expiresAt time.Time) error {
+	if mockRepo.refreshTokenError != nil {
+		return mockRepo.refreshTokenError
+	}
+	mockRepo.refreshedUserID = userID
+	mockRepo.refreshedToken = verificationToken
 	return nil
 }
 
@@ -160,8 +185,9 @@ func TestHandleUserRegistrationRequestReturnsBadRequestOnValidationFailure(testi
 func TestHandleUserRegistrationRequestReturnsConflictWhenEmailAlreadyExists(testingInstance *testing.T) {
 	mockRepository := &mockUserRegistrationRepository{
 		userByEmail: &models.User{
-			ID:    "existing-id",
-			Email: "existing@example.com",
+			ID:       "existing-id",
+			Email:    "existing@example.com",
+			Verified: true,
 		},
 	}
 	registrationHandler := NewUserRegistrationHandler(mockRepository, &mockVerificationEmailSender{})
@@ -254,5 +280,67 @@ func TestHandleUserEmailVerificationRequestReturnsBadRequestForExpiredOrInvalidT
 
 	if missingTokenRecorder.Code != http.StatusBadRequest {
 		testingInstance.Fatalf("expected status %d for missing token, got %d", http.StatusBadRequest, missingTokenRecorder.Code)
+	}
+}
+
+// TestHandleUserRegistrationRequest_CleansUpUnverifiedUserOnEmailFailure verifies that if sending the verification
+// email fails, the newly created unverified user record is deleted so the user can retry registration.
+func TestHandleUserRegistrationRequest_CleansUpUnverifiedUserOnEmailFailure(testingInstance *testing.T) {
+	mockRepository := &mockUserRegistrationRepository{}
+	mockEmailSender := &mockVerificationEmailSender{
+		sendError: http.ErrHandlerTimeout,
+	}
+	registrationHandler := NewUserRegistrationHandler(mockRepository, mockEmailSender)
+
+	requestBody := `{"email":"Retry.User@Example.com","confirmEmail":"retry.user@example.com","password":"password123","confirmPassword":"password123"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(requestBody))
+	recorder := httptest.NewRecorder()
+
+	registrationHandler.HandleUserRegistrationRequest(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		testingInstance.Fatalf("expected 500 Internal Server Error, got %d", recorder.Code)
+	}
+	if mockRepository.createdUser == nil || mockRepository.createdUser.Email != "retry.user@example.com" {
+		testingInstance.Fatalf("expected normalized lowercase email to be persisted, got %+v", mockRepository.createdUser)
+	}
+	if mockRepository.deletedUserID != "created-user-id" {
+		testingInstance.Fatalf("expected DeleteUnverifiedUserRecord to be called for created-user-id, got %q", mockRepository.deletedUserID)
+	}
+}
+
+// TestHandleUserRegistrationRequest_ResendsVerificationForUnverifiedUser verifies that re-registering an
+// unverified email refreshes the verification token, resends the email, and returns 200 OK info status.
+func TestHandleUserRegistrationRequest_ResendsVerificationForUnverifiedUser(testingInstance *testing.T) {
+	mockRepository := &mockUserRegistrationRepository{
+		userByEmail: &models.User{
+			ID:       "pending-user-id",
+			Email:    "pending@example.com",
+			Verified: false,
+		},
+	}
+	mockEmailSender := &mockVerificationEmailSender{}
+	registrationHandler := NewUserRegistrationHandler(mockRepository, mockEmailSender)
+
+	requestBody := `{"email":"pending@example.com","confirmEmail":"pending@example.com","password":"password123","confirmPassword":"password123"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(requestBody))
+	recorder := httptest.NewRecorder()
+
+	registrationHandler.HandleUserRegistrationRequest(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		testingInstance.Fatalf("expected 200 OK, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if mockRepository.refreshedUserID != "pending-user-id" || mockRepository.refreshedToken == "" {
+		testingInstance.Fatalf("expected RefreshVerificationToken to be called for pending-user-id")
+	}
+	if mockEmailSender.sentRecipientEmail != "pending@example.com" || mockEmailSender.sentToken != mockRepository.refreshedToken {
+		testingInstance.Fatalf("expected refreshed verification token to be emailed")
+	}
+
+	var payload StandardAPIResponsePayload
+	_ = json.Unmarshal(recorder.Body.Bytes(), &payload)
+	if payload.Type != "info" || payload.Title != "Verification Pending" {
+		testingInstance.Fatalf("unexpected response payload: %+v", payload)
 	}
 }

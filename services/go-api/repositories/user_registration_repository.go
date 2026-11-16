@@ -16,6 +16,8 @@ import (
 type UserRegistrationRepository interface {
 	FindUserByEmailAddress(emailAddress string) (*models.User, error)
 	CreateUnverifiedUserRecord(user *models.User) error
+	RefreshVerificationToken(userID string, verificationToken string, expiresAt time.Time) error
+	DeleteUnverifiedUserRecord(userID string) error
 	FindUserByVerificationToken(verificationToken string) (*models.User, error)
 	MarkUserEmailAsVerified(userID string, verifiedAt time.Time) error
 }
@@ -43,8 +45,9 @@ func (repository *GormUserRegistrationRepository) FindUserByEmailAddress(emailAd
 		return nil, errors.New("email address must not be empty")
 	}
 
+	normalizedEmail := strings.ToLower(strings.TrimSpace(emailAddress))
 	var userRecord models.User
-	queryResult := repository.databaseConnection.Where("email = ?", emailAddress).First(&userRecord)
+	queryResult := repository.databaseConnection.Where("LOWER(email) = ?", normalizedEmail).First(&userRecord)
 	if queryResult.Error != nil {
 		return nil, queryResult.Error
 	}
@@ -69,6 +72,47 @@ func (repository *GormUserRegistrationRepository) CreateUnverifiedUserRecord(use
 
 	creationResult := repository.databaseConnection.Create(user)
 	return creationResult.Error
+}
+
+// RefreshVerificationToken updates the verification token and expiration timestamp for an unverified user.
+func (repository *GormUserRegistrationRepository) RefreshVerificationToken(
+	userID string,
+	verificationToken string,
+	expiresAt time.Time,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	trimmedToken := strings.TrimSpace(verificationToken)
+	if trimmedUserID == "" || trimmedToken == "" {
+		return errors.New("user ID and verification token must not be empty")
+	}
+
+	return repository.databaseConnection.
+		Model(&models.User{}).
+		Where("id = ? AND verified = ?", trimmedUserID, false).
+		Updates(map[string]any{
+			"verification_token":            trimmedToken,
+			"verification_token_expired_at": expiresAt.UTC(),
+		}).Error
+}
+
+// DeleteUnverifiedUserRecord deletes a newly created unverified user record (used for cleanup when verification email delivery fails).
+func (repository *GormUserRegistrationRepository) DeleteUnverifiedUserRecord(userID string) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return errors.New("user ID must not be empty")
+	}
+
+	return repository.databaseConnection.
+		Where("id = ? AND verified = ?", trimmedUserID, false).
+		Delete(&models.User{}).Error
 }
 
 // FindUserByVerificationToken looks up a single User record associated with the given email verification token.

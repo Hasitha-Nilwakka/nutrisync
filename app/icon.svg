@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none" role="img" aria-label="NutriSync Logo Mark">
+  <defs>
+    <linearGradient id="ns-ring-grad" x1="20" y1="170" x2="178" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0B74B8" />
+      <stop offset="48%" stop-color="#18A999" />
+      <stop offset="100%" stop-color="#43B047" />
+    </linearGradient>
+    <linearGradient id="ns-n-grad" x1="36" y1="148" x2="98" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0B74B8" />
+      <stop offset="100%" stop-color="#18A999" />
+    </linearGradient>
+    <linearGradient id="ns-leaf-grad" x1="76" y1="154" x2="128" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#167C65" />
+      <stop offset="55%" stop-color="#1FA386" />
+      <stop offset="100%" stop-color="#56C252" />
+    </linearGradient>
+    <linearGradient id="ns-s-grad" x1="112" y1="146" x2="174" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0E84B5" />
+      <stop offset="55%" stop-color="#1CA994" />
+      <stop offset="100%" stop-color="#4EC050" />
+    </linearGradient>
+  </defs>
+
+  <!-- Neural / Data Nodes (Upper & Lower) -->
+  <g stroke="url(#ns-ring-grad)" stroke-width="2.2" stroke-linecap="round" opacity="0.88">
+    <line x1="78" y1="42" x2="98" y2="33" />
+    <line x1="98" y1="33" x2="118" y2="41" />
+    <line x1="98" y1="33" x2="104" y2="50" />
+    <line x1="78" y1="42" x2="88" y2="54" />
+    <line x1="48" y1="138" x2="62" y2="152" />
+    <line x1="62" y1="152" x2="43" y2="154" />
+    <line x1="108" y1="148" x2="128" y2="154" />
+    <line x1="128" y1="154" x2="120" y2="136" />
+  </g>
+  <g fill="url(#ns-ring-grad)">
+    <circle cx="78" cy="42" r="3.4" />
+    <circle cx="98" cy="33" r="3.8" />
+    <circle cx="118" cy="41" r="3.2" />
+    <circle cx="104" cy="50" r="2.8" />
+    <circle cx="88" cy="54" r="2.8" />
+    <circle cx="48" cy="138" r="3.2" />
+    <circle cx="62" cy="152" r="3.4" />
+    <circle cx="43" cy="154" r="2.8" />
+    <circle cx="108" cy="148" r="3" />
+    <circle cx="128" cy="154" r="3.2" />
+    <circle cx="120" cy="136" r="2.8" />
+    <circle cx="163" cy="92" r="3" />
+  </g>
+
+  <!-- Outer Circular Emblem Arc -->
+  <path
+    d="M150.5 41.5 A76 76 0 1 0 174 108"
+    stroke="url(#ns-ring-grad)"
+    stroke-width="7.5"
+    stroke-linecap="round"
+  />
+  <path
+    d="M168 134 A76 76 0 0 1 56 164"
+    stroke="url(#ns-ring-grad)"
+    stroke-width="4.5"
+    stroke-linecap="round"
+    opacity="0.7"
+  />
+
+  <!-- Stylized 'N' Monogram -->
+  <path
+    d="M44 134 V80 C44 68 58 66 64 76 L88 118 V70"
+    stroke="url(#ns-n-grad)"
+    stroke-width="11"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Stylized 'S' + Upward Growth Arrow -->
+  <path
+    d="M142 74 C126 68 115 78 119 90 C123 102 151 103 151 120 C151 134 136 144 118 139"
+    stroke="url(#ns-s-grad)"
+    stroke-width="11"
+    stroke-linecap="round"
+  />
+  <path
+    d="M138 68 L164 42"
+    stroke="url(#ns-s-grad)"
+    stroke-width="9"
+    stroke-linecap="round"
+  />
+  <path
+    d="M146 37 L170 36 L169 60 Z"
+    fill="#1FA98F"
+  />
+
+  <!-- Central Botanical Leaf -->
+  <path
+    d="M78 148 C78 112 96 76 130 58 C132 96 114 128 84 146 Z"
+    fill="url(#ns-leaf-grad)"
+  />
+  <path
+    d="M82 146 C94 122 108 96 125 68"
+    stroke="#E8FBF4"
+    stroke-width="2.6"
+    stroke-linecap="round"
+    opacity="0.9"
+  />
+</svg>

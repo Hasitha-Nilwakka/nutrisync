@@ -53,7 +53,7 @@ export default function GoogleAuthButton() {
     <Button
       type="button"
       variant="outline"
-      className="w-full gap-2"
+      className="h-10 w-full gap-2.5 rounded-lg border-border/80 bg-background font-medium shadow-2xs transition-all hover:border-border hover:bg-muted/70"
       disabled={isRedirecting}
       onClick={handleGoogleSignIn}
     >
@@ -64,9 +64,23 @@ export default function GoogleAuthButton() {
           aria-hidden="true"
           viewBox="0 0 24 24"
           className="size-4 shrink-0"
-          fill="currentColor"
         >
-          <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
+          <path
+            fill="#4285F4"
+            d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+          />
+          <path
+            fill="#34A853"
+            d="M12 24c3.3 0 6.08-1.09 8.105-2.96l-3.88-3.05c-1.1.74-2.51 1.18-4.225 1.18-3.25 0-6.01-2.19-6.995-5.14H1.06v3.14C3.125 21.24 7.31 24 12 24Z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M5.005 14.03A7.22 7.22 0 0 1 4.62 12c0-.7.13-1.39.385-2.03V6.83H1.06A11.98 11.98 0 0 0 0 12c0 1.94.46 3.77 1.06 5.17l3.945-3.14Z"
+          />
+          <path
+            fill="#EA4335"
+            d="M12 4.83c1.8 0 3.41.62 4.68 1.83l3.51-3.51C18.075 1.19 15.3 0 12 0 7.31 0 3.125 2.76 1.06 6.83l3.945 3.14C5.99 7.02 8.75 4.83 12 4.83Z"
+          />
         </svg>
       )}
       <span>{isRedirecting ? "Redirecting to Google..." : "Continue with Google"}</span>

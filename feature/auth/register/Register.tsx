@@ -25,7 +25,7 @@ export default function RegistrationForm() {
             password : '',
             confirmPassword : '',
         },
-        mode : 'all'
+        mode : 'onTouched'
     })
 
     //Submit the form
@@ -42,12 +42,12 @@ export default function RegistrationForm() {
         }
     }
     return (
-        <div>
-            <form className="w-full max-w-md border" onSubmit={handleSubmit(onSubmit)}>
+        <div className="w-full">
+            <form className="w-full" onSubmit={handleSubmit(onSubmit)}>
                 <FieldGroup>
                     <FieldSet>
-                        <FieldLegend>Register as a new user</FieldLegend>
-                        <FieldDescription>All fields are mandatory</FieldDescription>
+                        <FieldLegend>Create your account</FieldLegend>
+                        <FieldDescription>All fields are required</FieldDescription>
                         <FieldGroup>
                             <Field>
                                 <FieldLabel htmlFor="email">Email address</FieldLabel>
@@ -107,12 +107,12 @@ export default function RegistrationForm() {
                     {errors.root && (
                         <FieldError>{errors.root.message}</FieldError>
                     )}
-                    <Field orientation="horizontal">
-                        <Button type="submit" disabled={isSubmitting}>
+                    <Field orientation="horizontal" className="pt-1">
+                        <Button type="submit" className="flex-1" disabled={isSubmitting}>
                             {isSubmitting && <Spinner/>}
-                            {isSubmitting ? 'Registering' : "Register"}
+                            {isSubmitting ? 'Registering...' : "Register"}
                         </Button>
-                        <Button variant="outline" type="reset" onClick={() => reset()}>
+                        <Button variant="outline" type="reset" className="flex-1" onClick={() => reset()}>
                             Clear
                         </Button>
                     </Field>

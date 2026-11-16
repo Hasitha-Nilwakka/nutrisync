@@ -35,7 +35,7 @@ export default function LoginForm() {
             email : '',
             password : ''
         },
-        mode : 'all'
+        mode : 'onTouched'
     })
 
     const twoFactorForm = useForm<TwoFactorCodeFormData>({
@@ -144,12 +144,12 @@ export default function LoginForm() {
         )
     } 
     return (
-        <div className="w-full max-w-md">
+        <div className="w-full space-y-3">
             <form onSubmit={handleSubmit(onSubmit)}>
                 <FieldGroup>
                     <FieldSet>
-                        <FieldLegend>Login to your profile</FieldLegend>
-                        <FieldDescription>Enter your email & password</FieldDescription>
+                        <FieldLegend>Log in to your profile</FieldLegend>
+                        <FieldDescription>Enter your email and password</FieldDescription>
                         <FieldGroup>
                             <Field>
                                 <FieldLabel htmlFor="email">Email</FieldLabel>
@@ -172,16 +172,16 @@ export default function LoginForm() {
                                 />
                                 {errors.password && <FieldError>{errors.password.message}</FieldError>}
                             </Field>
-                            <FieldSeparator/>
                             {errors.root && <FieldError>{errors.root.message}</FieldError>}
-                            <Field orientation='horizontal'>
-                                <Button type="submit" disabled={isSubmitting}>
+                            <Field orientation='horizontal' className="pt-1">
+                                <Button type="submit" className="flex-1" disabled={isSubmitting}>
                                     {isSubmitting && <Spinner/>}
-                                    {isSubmitting ? 'Login in...' : "Login"}
+                                    {isSubmitting ? 'Logging in...' : "Login"}
                                 </Button>
                                 <Button 
                                     variant='outline' 
                                     type='reset' 
+                                    className="flex-1"
                                     disabled={isSubmitting}
                                     onClick={() => reset()}
                                 >
@@ -192,7 +192,9 @@ export default function LoginForm() {
                     </FieldSet>
                 </FieldGroup>
             </form>
-            <SendPasswordResetVerification/>
+            <div className="flex justify-end">
+                <SendPasswordResetVerification/>
+            </div>
         </div>
     )
 }

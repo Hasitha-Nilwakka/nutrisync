@@ -100,6 +100,7 @@ func CreateApplicationMux(
 		mux.HandleFunc("POST /api/auth/logout", userSessionHandler.HandleUserLogoutRequest)
 		mux.HandleFunc("GET /api/auth/session", userSessionHandler.HandleVerifyActiveSessionRequest)
 		mux.HandleFunc("POST /api/auth/consent", userSessionHandler.HandleUserGDPRConsentRequest)
+		mux.HandleFunc("DELETE /api/auth/account", userSessionHandler.HandleDeleteAuthenticatedUserAccountRequest)
 	}
 
 	for _, candidateHandler := range oauthHandlers {

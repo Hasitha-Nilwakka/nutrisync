@@ -53,6 +53,10 @@ const nextConfig: NextConfig = {
           destination: `${goApiBaseUrl}/api/auth/consent`,
         },
         {
+          source: "/api/auth/account",
+          destination: `${goApiBaseUrl}/api/auth/account`,
+        },
+        {
           source: "/api/auth/passwordreset",
           destination: `${goApiBaseUrl}/api/auth/passwordreset`,
         },

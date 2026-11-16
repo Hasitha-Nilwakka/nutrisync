@@ -102,6 +102,11 @@ func (repository *inMemoryTwoFactorRepository) DeleteUnconsentedUserAndAccounts(
 	return nil
 }
 
+func (repository *inMemoryTwoFactorRepository) DeleteAuthenticatedUserAccountAndAllData(ctx context.Context, userID string) error {
+	delete(repository.usersByID, userID)
+	return nil
+}
+
 func (repository *inMemoryTwoFactorRepository) SetPendingTwoFactorSecret(ctx context.Context, userID, secret string) error {
 	if user, exists := repository.usersByID[userID]; exists {
 		secretCopy := secret

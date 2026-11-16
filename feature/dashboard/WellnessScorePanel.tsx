@@ -53,7 +53,7 @@ function getMilestoneIcon(category: string, id: string) {
 export function WellnessScorePanel({ healthProfile, latestWellness }: WellnessScorePanelProps) {
   if (!latestWellness) {
     return (
-      <section className="rounded-xl border bg-card p-6 shadow-xs">
+      <section className="rounded-2xl border border-border/80 bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <HeartPulse className="size-4" />
           <span>Wellness Score</span>
@@ -82,7 +82,7 @@ export function WellnessScorePanel({ healthProfile, latestWellness }: WellnessSc
   const preferredUnit = healthProfile?.preferredWeightUnit ?? "kg"
 
   return (
-    <section className="flex flex-col gap-6 rounded-xl border bg-card p-6 shadow-xs">
+    <section className="flex flex-col gap-6 rounded-2xl border border-border/80 bg-card p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Wellness Overview</h2>

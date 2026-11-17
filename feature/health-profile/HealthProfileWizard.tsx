@@ -8,8 +8,17 @@ import axios from "axios"
 import { useRouter } from "next/navigation"
 import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { Sparkles, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Field,
   FieldDescription,
@@ -28,6 +37,7 @@ import {
   ACTIVITY_LEVEL_OPTIONS,
   DIETARY_PREFERENCE_OPTIONS,
   DIETARY_RESTRICTION_OPTIONS,
+  EMPTY_HEALTH_PROFILE_FORM_DATA,
   EXERCISE_TYPE_OPTIONS,
   FITNESS_LEVEL_OPTIONS,
   GENDER_OPTIONS,
@@ -37,6 +47,7 @@ import {
   PREFERRED_ENVIRONMENT_OPTIONS,
   PREFERRED_TIME_OF_DAY_OPTIONS,
   PRIMARY_GOAL_OPTIONS,
+  SAMPLE_HEALTH_PROFILE_FORM_DATA,
   SESSION_DURATION_OPTIONS,
   TARGET_ACTIVITY_LEVEL_OPTIONS,
   WEIGHT_UNIT_OPTIONS,
@@ -82,6 +93,9 @@ function formatOptionLabel(value: string): string {
 export default function HealthProfileWizard() {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState<number>(1)
+  const [isDemoInterceptOpen, setIsDemoInterceptOpen] = useState<boolean>(true)
+  const [isUsingSampleData, setIsUsingSampleData] = useState<boolean>(true)
+  const [formInstanceKey, setFormInstanceKey] = useState<number>(0)
 
   const {
     register,
@@ -90,43 +104,31 @@ export default function HealthProfileWizard() {
     setValue,
     setError,
     clearErrors,
+    reset,
     control,
     formState: { errors, isSubmitting },
   } = useForm<HealthProfileFormData>({
     resolver: zodResolver(healthProfileSchema),
-    defaultValues: {
-      age: 28,
-      gender: "prefer_not_to_say",
-      heightUnit: "cm",
-      height: 170,
-      weightUnit: "kg",
-      currentWeight: 70,
-      targetWeight: 68,
-      occupationType: "sedentary_desk",
-      activityLevel: "moderate",
-      primaryGoal: "general_fitness",
-      targetActivityLevel: "active",
-      targetWeeklyDays: 4,
-      weeklyActivityDays: 3,
-      exerciseTypes: ["cardio"],
-      sessionDuration: "30_60_min",
-      fitnessLevel: "intermediate",
-      preferredEnvironment: "mixed",
-      preferredTimeOfDay: "flexible",
-      enduranceMinutes: 25,
-      pushupsCount: 15,
-      squatsCount: 25,
-      dietaryPreferences: ["balanced"],
-      dietaryRestrictions: [],
-      medicalConditions: "",
-      sleepHours: 7.5,
-      waterLiters: 2.0,
-      allowAiProcessing: true,
-      publicProfileVisible: false,
-      emailNotifications: true,
-    },
+    defaultValues: SAMPLE_HEALTH_PROFILE_FORM_DATA,
     mode: "onChange",
   })
+
+  const handleContinueWithSampleData = () => {
+    reset(SAMPLE_HEALTH_PROFILE_FORM_DATA)
+    clearErrors()
+    setIsUsingSampleData(true)
+    setIsDemoInterceptOpen(false)
+    setFormInstanceKey((prev) => prev + 1)
+  }
+
+  const handleStartWithBlankProfile = () => {
+    reset(EMPTY_HEALTH_PROFILE_FORM_DATA)
+    clearErrors()
+    setCurrentStep(1)
+    setIsUsingSampleData(false)
+    setIsDemoInterceptOpen(false)
+    setFormInstanceKey((prev) => prev + 1)
+  }
 
   const watchedHeight = useWatch({ control, name: "height" })
   const watchedHeightUnit = useWatch({ control, name: "heightUnit" })
@@ -199,19 +201,47 @@ export default function HealthProfileWizard() {
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-8rem)] w-full max-w-2xl flex-col justify-center px-4 py-8">
       <div className="w-full rounded-lg border p-6">
-        <div className="mb-4 flex items-center justify-between text-sm">
-          <span className="font-medium">Step {currentStep} of 4</span>
-          <span>
-            {currentStep === 1 && "Demographics & Physical Metrics"}
-            {currentStep === 2 && "Lifestyle & Goals"}
-            {currentStep === 3 && "Initial Fitness Assessment"}
-            {currentStep === 4 && "Nutrition, Habits & Privacy"}
-          </span>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">Step {currentStep} of 4</span>
+            <span className="text-muted-foreground">
+              {currentStep === 1 && "Demographics & Physical Metrics"}
+              {currentStep === 2 && "Lifestyle & Goals"}
+              {currentStep === 3 && "Initial Fitness Assessment"}
+              {currentStep === 4 && "Nutrition, Habits & Privacy"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isUsingSampleData ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground hover:text-destructive"
+                onClick={handleStartWithBlankProfile}
+              >
+                <Trash2 className="size-3.5" />
+                Clear Sample Data
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground hover:text-primary"
+                onClick={handleContinueWithSampleData}
+              >
+                <Sparkles className="size-3.5" />
+                Load Sample Data
+              </Button>
+            )}
+          </div>
         </div>
 
         <FieldSeparator />
 
-        <form className="mt-4" onSubmit={handleSubmit(onSubmit)}>
+        <form key={formInstanceKey} className="mt-4" onSubmit={handleSubmit(onSubmit)}>
           {currentStep === 1 && (
             <FieldSet>
               <FieldLegend>Step 1: Demographics &amp; Physical Metrics</FieldLegend>
@@ -265,6 +295,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.heightUnit && <FieldError>{errors.heightUnit.message}</FieldError>}
                   </Field>
 
                   <Field>
@@ -298,6 +329,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.weightUnit && <FieldError>{errors.weightUnit.message}</FieldError>}
                   </Field>
 
                   <Field>
@@ -358,6 +390,7 @@ export default function HealthProfileWizard() {
                       </option>
                     ))}
                   </select>
+                  {errors.occupationType && <FieldError>{errors.occupationType.message}</FieldError>}
                 </Field>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -374,6 +407,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.activityLevel && <FieldError>{errors.activityLevel.message}</FieldError>}
                   </Field>
 
                   <Field>
@@ -389,6 +423,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.targetActivityLevel && <FieldError>{errors.targetActivityLevel.message}</FieldError>}
                   </Field>
                 </div>
 
@@ -406,6 +441,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.primaryGoal && <FieldError>{errors.primaryGoal.message}</FieldError>}
                   </Field>
 
                   <Field>
@@ -479,6 +515,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.sessionDuration && <FieldError>{errors.sessionDuration.message}</FieldError>}
                   </Field>
                 </div>
 
@@ -496,6 +533,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.fitnessLevel && <FieldError>{errors.fitnessLevel.message}</FieldError>}
                   </Field>
 
                   <Field>
@@ -511,6 +549,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.preferredEnvironment && <FieldError>{errors.preferredEnvironment.message}</FieldError>}
                   </Field>
 
                   <Field>
@@ -526,6 +565,7 @@ export default function HealthProfileWizard() {
                         </option>
                       ))}
                     </select>
+                    {errors.preferredTimeOfDay && <FieldError>{errors.preferredTimeOfDay.message}</FieldError>}
                   </Field>
                 </div>
 
@@ -596,6 +636,7 @@ export default function HealthProfileWizard() {
                       </Field>
                     ))}
                   </div>
+                  {errors.dietaryPreferences && <FieldError>{errors.dietaryPreferences.message}</FieldError>}
                 </Field>
 
                 <Field>
@@ -620,6 +661,7 @@ export default function HealthProfileWizard() {
                       </Field>
                     ))}
                   </div>
+                  {errors.dietaryRestrictions && <FieldError>{errors.dietaryRestrictions.message}</FieldError>}
                 </Field>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -657,6 +699,7 @@ export default function HealthProfileWizard() {
                     placeholder="e.g., lower back sensitivity, mild asthma..."
                     {...register("medicalConditions")}
                   />
+                  {errors.medicalConditions && <FieldError>{errors.medicalConditions.message}</FieldError>}
                 </Field>
 
                 <FieldSeparator />
@@ -732,6 +775,40 @@ export default function HealthProfileWizard() {
           </div>
         </form>
       </div>
+
+      <Dialog open={isDemoInterceptOpen} onOpenChange={setIsDemoInterceptOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="size-5 text-primary" />
+              Explore with Sample Profile Data?
+            </DialogTitle>
+            <DialogDescription className="text-left leading-relaxed">
+              Because NutriSync is a portfolio project, we have prefilled this health profile with realistic sample metrics so you can test the wellness engine and AI insights immediately.
+            </DialogDescription>
+          </DialogHeader>
+
+          <p className="text-xs text-muted-foreground">
+            Would you like to continue with prefilled sample data, or clear the form and fill in your own biometrics from scratch?
+          </p>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleStartWithBlankProfile}
+            >
+              Fill in My Own Details
+            </Button>
+            <Button
+              type="button"
+              onClick={handleContinueWithSampleData}
+            >
+              Continue with Sample Data
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

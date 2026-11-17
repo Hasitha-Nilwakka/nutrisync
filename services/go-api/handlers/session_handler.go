@@ -400,6 +400,14 @@ func (handler *UserSessionHandler) HandleRefreshTokenRotationRequest(responseWri
 	}
 
 	if rotateError := handler.sessionRepository.RotateRefreshTokenInTransaction(request.Context(), storedToken.ID, newRefreshToken); rotateError != nil {
+		if errors.Is(rotateError, repositories.ErrRefreshTokenAlreadyRotated) {
+			_ = handler.sessionRepository.RevokeSessionAndAllRefreshTokens(request.Context(), storedToken.SessionID)
+			auth.ClearAuthenticationCookies(responseWriter, handler.isProduction)
+			WriteJSONResponse(responseWriter, http.StatusUnauthorized, MessageOnlyResponsePayload{
+				Message: "refresh token reuse detected",
+			})
+			return
+		}
 		WriteJSONResponse(responseWriter, http.StatusInternalServerError, MessageOnlyResponsePayload{
 			Message: "internal server error",
 		})

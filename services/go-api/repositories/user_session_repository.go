@@ -8,8 +8,12 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"nutrysync/go-api/models"
 )
+
+// ErrRefreshTokenAlreadyRotated indicates a refresh token was already revoked or rotated by a concurrent/prior request.
+var ErrRefreshTokenAlreadyRotated = errors.New("refresh token already rotated or revoked")
 
 // UserSessionRepository defines the persistence operations required for user login,
 // refresh token rotation, reuse detection, session revocation, and GDPR consent management.
@@ -158,6 +162,18 @@ func (repository *GormUserSessionRepository) RotateRefreshTokenInTransaction(
 	}
 
 	return repository.databaseConnection.WithContext(ctx).Transaction(func(transactionDB *gorm.DB) error {
+		var lockedToken models.RefreshToken
+		if lockError := transactionDB.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", trimmedCurrentTokenID).
+			First(&lockedToken).Error; lockError != nil {
+			return lockError
+		}
+
+		if lockedToken.Revoked || lockedToken.ReplacedByTokenID != nil {
+			return ErrRefreshTokenAlreadyRotated
+		}
+
 		if createError := transactionDB.Create(newRefreshToken).Error; createError != nil {
 			return createError
 		}
@@ -168,7 +184,7 @@ func (repository *GormUserSessionRepository) RotateRefreshTokenInTransaction(
 		}
 
 		updateResult := transactionDB.Model(&models.RefreshToken{}).
-			Where("id = ?", trimmedCurrentTokenID).
+			Where("id = ? AND revoked = ?", trimmedCurrentTokenID, false).
 			Updates(rotationUpdates)
 		return updateResult.Error
 	})

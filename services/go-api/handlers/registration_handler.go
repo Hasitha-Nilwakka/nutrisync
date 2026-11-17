@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/mail"
+	"os"
 	"strings"
 	"time"
 
@@ -17,6 +18,13 @@ import (
 )
 
 const emailVerificationTokenValidityDuration = 24 * time.Hour
+
+// shouldSkipEmailVerification reports whether SKIP_EMAIL_VERIFICATION is enabled
+// (useful on hosts that block outbound SMTP, such as free-tier containers).
+func shouldSkipEmailVerification() bool {
+	flag := strings.TrimSpace(os.Getenv("SKIP_EMAIL_VERIFICATION"))
+	return strings.EqualFold(flag, "true") || flag == "1"
+}
 
 // UserRegistrationRequestPayload represents the JSON body accepted by POST /api/auth/register.
 // Supports both "consented" and the legacy "concented" spelling from client forms.
@@ -128,6 +136,24 @@ func (handler *UserRegistrationHandler) HandleUserRegistrationRequest(responseWr
 
 	if existingUser != nil {
 		if !existingUser.Verified {
+			if shouldSkipEmailVerification() {
+				if verifyError := handler.userRegistrationRepository.MarkUserEmailAsVerified(existingUser.ID, time.Now().UTC()); verifyError != nil {
+					WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+						Type:    "error",
+						Title:   "Registration Failed",
+						Message: "failed to verify existing account",
+					})
+					return
+				}
+
+				WriteJSONResponse(responseWriter, http.StatusOK, StandardAPIResponsePayload{
+					Type:    "success",
+					Title:   "Account Verified",
+					Message: "Account verified. You can now log in.",
+				})
+				return
+			}
+
 			newVerificationToken, newExpirationTime, tokenError := auth.GenerateEmailVerificationTokenAndExpiryDate(emailVerificationTokenValidityDuration)
 			if tokenError != nil {
 				WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
@@ -210,6 +236,25 @@ func (handler *UserRegistrationHandler) HandleUserRegistrationRequest(responseWr
 			Type:    "error",
 			Title:   "Registration Failed",
 			Message: "failed to create user record",
+		})
+		return
+	}
+
+	if shouldSkipEmailVerification() {
+		if verifyError := handler.userRegistrationRepository.MarkUserEmailAsVerified(newUserRecord.ID, time.Now().UTC()); verifyError != nil {
+			_ = handler.userRegistrationRepository.DeleteUnverifiedUserRecord(newUserRecord.ID)
+			WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+				Type:    "error",
+				Title:   "Registration Failed",
+				Message: "failed to verify user record",
+			})
+			return
+		}
+
+		WriteJSONResponse(responseWriter, http.StatusCreated, StandardAPIResponsePayload{
+			Type:    "success",
+			Title:   "Registration Successful",
+			Message: "Account created and verified. You can now log in.",
 		})
 		return
 	}

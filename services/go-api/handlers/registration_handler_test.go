@@ -344,3 +344,29 @@ func TestHandleUserRegistrationRequest_ResendsVerificationForUnverifiedUser(test
 		testingInstance.Fatalf("unexpected response payload: %+v", payload)
 	}
 }
+
+// TestHandleUserRegistrationRequest_SkipEmailVerification verifies that when SKIP_EMAIL_VERIFICATION=true,
+// a new user is immediately marked verified without invoking the SMTP email sender.
+func TestHandleUserRegistrationRequest_SkipEmailVerification(testingInstance *testing.T) {
+	testingInstance.Setenv("SKIP_EMAIL_VERIFICATION", "true")
+
+	mockRepository := &mockUserRegistrationRepository{}
+	mockEmailSender := &mockVerificationEmailSender{}
+	registrationHandler := NewUserRegistrationHandler(mockRepository, mockEmailSender)
+
+	requestBody := `{"email":"demo@example.com","confirmEmail":"demo@example.com","password":"password123","confirmPassword":"password123"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(requestBody))
+	recorder := httptest.NewRecorder()
+
+	registrationHandler.HandleUserRegistrationRequest(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		testingInstance.Fatalf("expected 201 Created, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if mockRepository.verifiedUserID == "" {
+		testingInstance.Fatalf("expected MarkUserEmailAsVerified to be called")
+	}
+	if mockEmailSender.sentRecipientEmail != "" {
+		testingInstance.Fatalf("expected email sender not to be called, got %q", mockEmailSender.sentRecipientEmail)
+	}
+}

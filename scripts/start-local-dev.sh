@@ -114,6 +114,134 @@ ensure_environment_file_exists() {
   fi
 }
 
+is_compose_service_running() {
+  local service_name="$1"
+  local running_services
+  running_services="$(docker compose ps --services --status running 2>/dev/null || true)"
+  echo "${running_services}" | grep -qx "${service_name}"
+}
+
+is_tcp_port_in_use() {
+  local port="$1"
+
+  if command -v lsof >/dev/null 2>&1 && [[ -n "$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)" ]]; then
+    return 0
+  fi
+  if [[ -n "$(docker ps --filter "publish=${port}" -q 2>/dev/null || true)" ]]; then
+    return 0
+  fi
+  if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "${port}" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+stop_homebrew_postgresql_if_running() {
+  if ! command -v brew >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local pg_services
+  pg_services="$(brew services list 2>/dev/null | awk '/^postgresql/ && $2 == "started" {print $1}' || true)"
+  for svc in ${pg_services}; do
+    echo "[INFO] Stopping Homebrew service '${svc}'..."
+    brew services stop "${svc}" >/dev/null 2>&1 || true
+  done
+}
+
+check_and_resolve_port_conflict() {
+  local port="$1"
+  local service_label="$2"
+
+  if ! is_tcp_port_in_use "${port}"; then
+    return 0
+  fi
+
+  echo ""
+  echo "[WARN] Port ${port} (needed for ${service_label}) is already in use."
+  if command -v lsof >/dev/null 2>&1; then
+    local lsof_output
+    lsof_output="$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "${lsof_output}" ]]; then
+      echo "${lsof_output}"
+    else
+      echo "       (Process is owned by another user/system service, e.g. system PostgreSQL.)"
+    fi
+  fi
+
+  local reply=""
+  if [[ -t 0 ]]; then
+    read -r -p "Do you want to stop/kill the process(es) on port ${port} and continue? [y/N]: " reply
+  else
+    echo "[ERROR] Non-interactive shell: cannot prompt to kill processes on port ${port}." >&2
+    exit 1
+  fi
+
+  case "${reply}" in
+    y|Y|yes|YES)
+      # 1. Stop any Docker container (from another project) publishing this port
+      local blocking_containers
+      blocking_containers="$(docker ps --filter "publish=${port}" --format '{{.ID}} {{.Names}}' 2>/dev/null || true)"
+      if [[ -n "${blocking_containers}" ]]; then
+        echo "[INFO] Stopping Docker container(s) publishing port ${port}..."
+        echo "${blocking_containers}" | awk '{print $1}' | xargs docker stop >/dev/null 2>&1 || true
+      fi
+
+      # 2. Stop user-owned host processes listening on this port
+      if command -v lsof >/dev/null 2>&1; then
+        local pids
+        pids="$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | sort -u || true)"
+        if [[ -n "${pids}" ]]; then
+          echo "[INFO] Stopping process(es) on port ${port} (${pids//$'\n'/ })..."
+          echo "${pids}" | xargs kill -TERM 2>/dev/null || true
+          sleep 1
+          pids="$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | sort -u || true)"
+          if [[ -n "${pids}" ]]; then
+            echo "${pids}" | xargs kill -KILL 2>/dev/null || true
+            sleep 1
+          fi
+        fi
+      fi
+
+      # 3. If port 5432 is still occupied, try stopping Homebrew PostgreSQL
+      if is_tcp_port_in_use "${port}" && [[ "${port}" == "${POSTGRES_PORT:-5432}" ]]; then
+        stop_homebrew_postgresql_if_running
+        sleep 1
+      fi
+
+      # 4. If still occupied by a root/system-owned process, prompt with sudo
+      if is_tcp_port_in_use "${port}" && command -v sudo >/dev/null 2>&1 && command -v lsof >/dev/null 2>&1; then
+        echo "[INFO] Port ${port} is held by a system/root process. Requesting sudo to stop it..."
+        local root_pids
+        root_pids="$(sudo lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | sort -u || true)"
+        if [[ -n "${root_pids}" ]]; then
+          echo "${root_pids}" | xargs sudo kill -TERM 2>/dev/null || true
+          sleep 1
+        fi
+      fi
+
+      if is_tcp_port_in_use "${port}"; then
+        echo "[ERROR] Port ${port} is still in use. Please stop the service manually and retry." >&2
+        exit 1
+      fi
+      echo "[OK]   Port ${port} is now free."
+      ;;
+    *)
+      echo "[INFO] Aborted by user. Free port ${port} and re-run ./scripts/start-local-dev.sh."
+      exit 1
+      ;;
+  esac
+}
+
+verify_required_local_ports() {
+  if ! is_compose_service_running "db"; then
+    check_and_resolve_port_conflict "${POSTGRES_PORT:-5432}" "PostgreSQL 17"
+  fi
+  check_and_resolve_port_conflict "8000" "Python AI Service (py-ai)"
+  check_and_resolve_port_conflict "8080" "Go Core API (go-api)"
+  check_and_resolve_port_conflict "3000" "Next.js Web Frontend"
+}
+
 start_postgresql_database_container() {
   echo "[INFO] Starting PostgreSQL 17 container (db) on localhost:5432..."
   docker compose up -d db
@@ -232,6 +360,7 @@ main() {
 
   trap cleanup_background_processes EXIT INT TERM
 
+  verify_required_local_ports
   start_postgresql_database_container
   configure_and_start_llm_backend
 
@@ -246,7 +375,7 @@ main() {
   echo "[INFO] Starting Go Core & Auth API (services/go-api) on http://localhost:8080..."
   (
     cd "${REPO_ROOT}/services/go-api"
-    DATABASE_URL="${DATABASE_URL:-postgresql://app:app_password@localhost:5432/nutrisync?sslmode=disable}" \
+    DATABASE_URL="postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@localhost:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-nutrisync}?sslmode=disable" \
     PY_AI_URL="http://localhost:8000" \
     APP_URL="http://localhost:3000" \
     go run .

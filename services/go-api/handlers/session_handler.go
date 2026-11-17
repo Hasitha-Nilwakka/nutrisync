@@ -400,6 +400,14 @@ func (handler *UserSessionHandler) HandleRefreshTokenRotationRequest(responseWri
 	}
 
 	if rotateError := handler.sessionRepository.RotateRefreshTokenInTransaction(request.Context(), storedToken.ID, newRefreshToken); rotateError != nil {
+		if errors.Is(rotateError, repositories.ErrRefreshTokenAlreadyRotated) {
+			_ = handler.sessionRepository.RevokeSessionAndAllRefreshTokens(request.Context(), storedToken.SessionID)
+			auth.ClearAuthenticationCookies(responseWriter, handler.isProduction)
+			WriteJSONResponse(responseWriter, http.StatusUnauthorized, MessageOnlyResponsePayload{
+				Message: "refresh token reuse detected",
+			})
+			return
+		}
 		WriteJSONResponse(responseWriter, http.StatusInternalServerError, MessageOnlyResponsePayload{
 			Message: "internal server error",
 		})
@@ -597,5 +605,76 @@ func (handler *UserSessionHandler) HandleUserGDPRConsentRequest(responseWriter h
 		Type:    "info",
 		Title:   "Account removed",
 		Message: "Consent declined. Your account data has been removed.",
+	})
+}
+
+// HandleDeleteAuthenticatedUserAccountRequest handles DELETE /api/auth/account:
+// verifies the caller's access_token cookie and active session, permanently deletes all user and health data,
+// and clears authentication cookies.
+func (handler *UserSessionHandler) HandleDeleteAuthenticatedUserAccountRequest(
+	responseWriter http.ResponseWriter,
+	request *http.Request,
+) {
+	if request.Method != http.MethodDelete {
+		WriteJSONResponse(responseWriter, http.StatusMethodNotAllowed, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Method Not Allowed",
+			Message: "only DELETE method is supported",
+		})
+		return
+	}
+
+	accessCookie, cookieError := request.Cookie(auth.AccessTokenCookieName)
+	if cookieError != nil || accessCookie == nil {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Unauthorized",
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	claims, verifyError := auth.VerifyAndParseAccessToken(accessCookie.Value, handler.jwtSecret)
+	if verifyError != nil || claims == nil {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Unauthorized",
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	sessionRecord, lookupError := handler.sessionRepository.FindSessionByID(request.Context(), claims.SessionID)
+	currentTimeUTC := time.Now().UTC()
+	if lookupError != nil ||
+		sessionRecord == nil ||
+		sessionRecord.UserID != claims.Subject ||
+		sessionRecord.Revoked ||
+		!currentTimeUTC.Before(sessionRecord.ExpiresAt) {
+		WriteJSONResponse(responseWriter, http.StatusUnauthorized, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Unauthorized",
+			Message: "Authentication required",
+		})
+		return
+	}
+
+	if deleteError := handler.sessionRepository.DeleteAuthenticatedUserAccountAndAllData(
+		request.Context(),
+		sessionRecord.UserID,
+	); deleteError != nil {
+		WriteJSONResponse(responseWriter, http.StatusInternalServerError, StandardAPIResponsePayload{
+			Type:    "error",
+			Title:   "Account Deletion Failed",
+			Message: "Failed to delete your account and health data",
+		})
+		return
+	}
+
+	auth.ClearAuthenticationCookies(responseWriter, handler.isProduction)
+	WriteJSONResponse(responseWriter, http.StatusOK, StandardAPIResponsePayload{
+		Type:    "success",
+		Title:   "Account Deleted",
+		Message: "Your account and all health data have been permanently deleted.",
 	})
 }

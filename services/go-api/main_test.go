@@ -42,6 +42,9 @@ func (stubMainSessionRepository) AcceptUserGDPRConsent(ctx context.Context, user
 func (stubMainSessionRepository) DeleteUnconsentedUserAndAccounts(ctx context.Context, userID string) error {
 	return nil
 }
+func (stubMainSessionRepository) DeleteAuthenticatedUserAccountAndAllData(ctx context.Context, userID string) error {
+	return nil
+}
 
 type stubMainAccountRepository struct{}
 

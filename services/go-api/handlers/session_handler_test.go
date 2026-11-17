@@ -14,6 +14,7 @@ import (
 
 	"nutrysync/go-api/auth"
 	"nutrysync/go-api/models"
+	"nutrysync/go-api/repositories"
 )
 
 // mockUserSessionRepository is an in-memory test double implementing repositories.UserSessionRepository.
@@ -29,6 +30,8 @@ type mockUserSessionRepository struct {
 	activeSessionByID     *models.Session
 	acceptedConsentUserID string
 	deletedUnconsentedID  string
+	deletedAccountUserID  string
+	rotateTokenError      error
 }
 
 func (mockRepo *mockUserSessionRepository) FindUserByEmailForLogin(ctx context.Context, email string) (*models.User, error) {
@@ -63,6 +66,9 @@ func (mockRepo *mockUserSessionRepository) RotateRefreshTokenInTransaction(
 	currentTokenID string,
 	newRefreshToken *models.RefreshToken,
 ) error {
+	if mockRepo.rotateTokenError != nil {
+		return mockRepo.rotateTokenError
+	}
 	mockRepo.rotatedOldTokenID = currentTokenID
 	mockRepo.rotatedNewToken = newRefreshToken
 	return nil
@@ -96,6 +102,11 @@ func (mockRepo *mockUserSessionRepository) AcceptUserGDPRConsent(ctx context.Con
 
 func (mockRepo *mockUserSessionRepository) DeleteUnconsentedUserAndAccounts(ctx context.Context, userID string) error {
 	mockRepo.deletedUnconsentedID = userID
+	return nil
+}
+
+func (mockRepo *mockUserSessionRepository) DeleteAuthenticatedUserAccountAndAllData(ctx context.Context, userID string) error {
+	mockRepo.deletedAccountUserID = userID
 	return nil
 }
 
@@ -359,5 +370,87 @@ func TestHandleUserGDPRConsentRequestAcceptAndDeclineAndEnrichedSession(testingI
 
 	if len(declineRec.Result().Cookies()) != 2 {
 		testingInstance.Errorf("expected 2 cleared auth cookies on consent decline, got %d", len(declineRec.Result().Cookies()))
+	}
+}
+
+func TestHandleDeleteAuthenticatedUserAccountRequest_AuthAndSuccess(t *testing.T) {
+	sessionRepo := &mockUserSessionRepository{
+		activeSessionByID: &models.Session{
+			ID:        "sess-del-1",
+			UserID:    "user-del-1",
+			ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+			Revoked:   false,
+		},
+	}
+	handler, err := NewUserSessionHandler(sessionRepo, "test-jwt-secret-key-32-chars-minimum", false)
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
+
+	// Non-DELETE returns 405
+	wrongMethodReq := httptest.NewRequest(http.MethodPost, "/api/auth/account", nil)
+	wrongMethodRec := httptest.NewRecorder()
+	handler.HandleDeleteAuthenticatedUserAccountRequest(wrongMethodRec, wrongMethodReq)
+	if wrongMethodRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 Method Not Allowed, got %d", wrongMethodRec.Code)
+	}
+
+	// Missing cookie returns 401
+	unauthReq := httptest.NewRequest(http.MethodDelete, "/api/auth/account", nil)
+	unauthRec := httptest.NewRecorder()
+	handler.HandleDeleteAuthenticatedUserAccountRequest(unauthRec, unauthReq)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", unauthRec.Code)
+	}
+
+	// Valid authenticated DELETE deletes account and clears cookies
+	accessToken, tokenErr := auth.GenerateSignedAccessToken("user-del-1", "sess-del-1", "test-jwt-secret-key-32-chars-minimum", 15*time.Minute)
+	if tokenErr != nil {
+		t.Fatalf("failed to generate access token: %v", tokenErr)
+	}
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/auth/account", nil)
+	deleteReq.AddCookie(&http.Cookie{Name: auth.AccessTokenCookieName, Value: accessToken})
+	deleteRec := httptest.NewRecorder()
+	handler.HandleDeleteAuthenticatedUserAccountRequest(deleteRec, deleteReq)
+
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", deleteRec.Code, deleteRec.Body.String())
+	}
+	if sessionRepo.deletedAccountUserID != "user-del-1" {
+		t.Fatalf("expected DeleteAuthenticatedUserAccountAndAllData for user-del-1, got %q", sessionRepo.deletedAccountUserID)
+	}
+}
+
+func TestHandleRefreshTokenRotationRequest_ConcurrentReuseReturns401AndRevokesSession(t *testing.T) {
+	rawSecret := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	secretHash := auth.HashRefreshTokenSecret(rawSecret)
+	sessionRepo := &mockUserSessionRepository{
+		storedRefreshToken: &models.RefreshToken{
+			ID:        "tok-race-1",
+			SessionID: "sess-race-1",
+			TokenHash: secretHash,
+			Revoked:   false,
+			ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+			Session: models.Session{
+				ID:        "sess-race-1",
+				UserID:    "user-race-1",
+				ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+				Revoked:   false,
+			},
+		},
+		rotateTokenError: repositories.ErrRefreshTokenAlreadyRotated,
+	}
+	handler, _ := NewUserSessionHandler(sessionRepo, "test-jwt-secret-key-32-chars-minimum", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: auth.RefreshTokenCookieName, Value: "tok-race-1." + rawSecret})
+	rec := httptest.NewRecorder()
+	handler.HandleRefreshTokenRotationRequest(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized on concurrent reuse, got %d", rec.Code)
+	}
+	if sessionRepo.revokedSessionID != "sess-race-1" {
+		t.Fatalf("expected RevokeSessionAndAllRefreshTokens for sess-race-1, got %q", sessionRepo.revokedSessionID)
 	}
 }

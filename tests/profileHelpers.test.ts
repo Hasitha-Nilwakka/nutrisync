@@ -1,4 +1,6 @@
 // Vitest unit tests for Health Profile response-to-form unit conversion mappers.
+import fs from "node:fs"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   mapHealthProfileResponseToFormData,
@@ -82,5 +84,41 @@ describe("mapHealthProfileResponseToFormData", () => {
     expect(mapped.currentWeight).toBeCloseTo(160, 0)
     expect(mapped.targetWeight).toBeCloseTo(150, 0)
     expect(healthProfileSchema.safeParse(mapped).success).toBe(true)
+  })
+})
+
+describe("Profile GDPR consent gate, brand header, and account deletion", () => {
+  const repoRoot = path.resolve(__dirname, "..")
+
+  it("enforces GdprConsentCard gate in app/profile/page.tsx", () => {
+    const profilePageSource = fs.readFileSync(
+      path.join(repoRoot, "app/profile/page.tsx"),
+      "utf8"
+    )
+    expect(profilePageSource).toContain("if (!session.consented)")
+    expect(profilePageSource).toContain("<GdprConsentCard")
+  })
+
+  it("configures /api/auth/account rewrite and renders NutriSyncBrand, ThemeToggle, and PrivacyAndAccountDeletionCard", () => {
+    const nextConfigSource = fs.readFileSync(
+      path.join(repoRoot, "next.config.ts"),
+      "utf8"
+    )
+    expect(nextConfigSource).toContain('source: "/api/auth/account"')
+
+    const profileClientSource = fs.readFileSync(
+      path.join(repoRoot, "feature/profile/ProfilePageClient.tsx"),
+      "utf8"
+    )
+    expect(profileClientSource).toContain("<NutriSyncBrand")
+    expect(profileClientSource).toContain("<ThemeToggle")
+    expect(profileClientSource).toContain("<PrivacyAndAccountDeletionCard")
+
+    const deletionCardSource = fs.readFileSync(
+      path.join(repoRoot, "feature/profile/PrivacyAndAccountDeletionCard.tsx"),
+      "utf8"
+    )
+    expect(deletionCardSource).toContain('axios.delete("/api/auth/account"')
+    expect(deletionCardSource).toContain('confirmationText.trim() !== "DELETE"')
   })
 })

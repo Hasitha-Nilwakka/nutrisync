@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   experimental: {
     agentFeedback: true,
   },
@@ -51,6 +52,10 @@ const nextConfig: NextConfig = {
         {
           source: "/api/auth/consent",
           destination: `${goApiBaseUrl}/api/auth/consent`,
+        },
+        {
+          source: "/api/auth/account",
+          destination: `${goApiBaseUrl}/api/auth/account`,
         },
         {
           source: "/api/auth/passwordreset",

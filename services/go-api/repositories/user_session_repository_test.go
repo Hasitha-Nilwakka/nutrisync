@@ -167,3 +167,20 @@ func TestGormUserSessionRepositoryMethodsValidationAndDryRunExecution(testingIns
 		testingInstance.Fatalf("expected DeleteUnconsentedUserAndAccounts to succeed in dry-run, got: %v", deleteErr)
 	}
 }
+
+func TestDeleteAuthenticatedUserAccountAndAllDataValidationAndDryRun(t *testing.T) {
+	nilRepo := &GormUserSessionRepository{}
+	if err := nilRepo.DeleteAuthenticatedUserAccountAndAllData(context.Background(), "u1"); err == nil {
+		t.Fatal("expected error when database connection is nil")
+	}
+
+	dryRunDB := createDryRunGormDatabaseConnection(t)
+	repo, err := NewGormUserSessionRepository(dryRunDB)
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
+
+	if err := repo.DeleteAuthenticatedUserAccountAndAllData(context.Background(), "   "); err == nil {
+		t.Fatal("expected error when userID is blank")
+	}
+}

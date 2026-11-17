@@ -4,13 +4,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GO_API_URL: ${DOCKER_GO_API_URL:-http://go-api:8080}
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app_password@db:5432/nutrisync?schema=public}
-      GO_API_URL: ${GO_API_URL:-http://go-api:8080}
-      PY_AI_URL: ${PY_AI_URL:-http://py-ai:8000}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://app:app_password@db:5432/nutrisync?sslmode=disable}
+      GO_API_URL: ${DOCKER_GO_API_URL:-http://go-api:8080}
+      PY_AI_URL: ${DOCKER_PY_AI_URL:-http://py-ai:8000}
     depends_on:
       db:
         condition: service_healthy
@@ -27,9 +29,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://app:app_password@db:5432/nutrisync?schema=public}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://app:app_password@db:5432/nutrisync?sslmode=disable}
       APP_URL: ${APP_URL:-http://localhost:3000}
-      PY_AI_URL: ${PY_AI_URL:-http://py-ai:8000}
+      PY_AI_URL: ${DOCKER_PY_AI_URL:-http://py-ai:8000}
       JWT_SECRET: ${JWT_SECRET:-}
       EMAIL_USER: ${EMAIL_USER:-}
       EMAIL_APP_PASSWORD: ${EMAIL_APP_PASSWORD:-}
@@ -49,8 +51,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      GO_API_URL: ${GO_API_URL:-http://go-api:8080}
-      LLM_API_URL: ${LLM_API_URL:-http://host.docker.internal:11434/api/chat}
+      GO_API_URL: ${DOCKER_GO_API_URL:-http://go-api:8080}
+      LLM_API_URL: ${DOCKER_LLM_API_URL:-http://host.docker.internal:11434/api/chat}
       LLM_MODEL: ${LLM_MODEL:-nutrisync-llama}
       LLM_API_FORMAT: ${LLM_API_FORMAT:-ollama_chat}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-15.0}
@@ -63,6 +65,8 @@ services:
 
   db:
     image: postgres:17-alpine
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app_password}

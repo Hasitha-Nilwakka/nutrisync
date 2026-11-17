@@ -8,8 +8,12 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"nutrysync/go-api/models"
 )
+
+// ErrRefreshTokenAlreadyRotated indicates a refresh token was already revoked or rotated by a concurrent/prior request.
+var ErrRefreshTokenAlreadyRotated = errors.New("refresh token already rotated or revoked")
 
 // UserSessionRepository defines the persistence operations required for user login,
 // refresh token rotation, reuse detection, session revocation, and GDPR consent management.
@@ -22,6 +26,7 @@ type UserSessionRepository interface {
 	FindSessionByID(ctx context.Context, sessionID string) (*models.Session, error)
 	AcceptUserGDPRConsent(ctx context.Context, userID string) error
 	DeleteUnconsentedUserAndAccounts(ctx context.Context, userID string) error
+	DeleteAuthenticatedUserAccountAndAllData(ctx context.Context, userID string) error
 }
 
 // TwoFactorRepository defines the persistence operations required for configuring, enabling,
@@ -157,6 +162,18 @@ func (repository *GormUserSessionRepository) RotateRefreshTokenInTransaction(
 	}
 
 	return repository.databaseConnection.WithContext(ctx).Transaction(func(transactionDB *gorm.DB) error {
+		var lockedToken models.RefreshToken
+		if lockError := transactionDB.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", trimmedCurrentTokenID).
+			First(&lockedToken).Error; lockError != nil {
+			return lockError
+		}
+
+		if lockedToken.Revoked || lockedToken.ReplacedByTokenID != nil {
+			return ErrRefreshTokenAlreadyRotated
+		}
+
 		if createError := transactionDB.Create(newRefreshToken).Error; createError != nil {
 			return createError
 		}
@@ -167,7 +184,7 @@ func (repository *GormUserSessionRepository) RotateRefreshTokenInTransaction(
 		}
 
 		updateResult := transactionDB.Model(&models.RefreshToken{}).
-			Where("id = ?", trimmedCurrentTokenID).
+			Where("id = ? AND revoked = ?", trimmedCurrentTokenID, false).
 			Updates(rotationUpdates)
 		return updateResult.Error
 	})
@@ -303,6 +320,56 @@ func (repository *GormUserSessionRepository) DeleteUnconsentedUserAndAccounts(
 		}
 
 		return nil
+	})
+}
+
+// DeleteAuthenticatedUserAccountAndAllData permanently deletes an authenticated user's health records,
+// AI insights, OAuth accounts, sessions, refresh tokens, password resets, and user record in a transaction.
+func (repository *GormUserSessionRepository) DeleteAuthenticatedUserAccountAndAllData(
+	ctx context.Context,
+	userID string,
+) error {
+	if repository == nil || repository.databaseConnection == nil {
+		return errors.New("database connection must not be nil")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return errors.New("user ID must not be empty")
+	}
+
+	return repository.databaseConnection.WithContext(ctx).Transaction(func(transactionDB *gorm.DB) error {
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.AIInsightRecord{}).Error; err != nil {
+			return err
+		}
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.WellnessSnapshot{}).Error; err != nil {
+			return err
+		}
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.ActivityEntry{}).Error; err != nil {
+			return err
+		}
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.WeightEntry{}).Error; err != nil {
+			return err
+		}
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.HealthProfile{}).Error; err != nil {
+			return err
+		}
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.Account{}).Error; err != nil {
+			return err
+		}
+
+		sessionIDSubQuery := transactionDB.Model(&models.Session{}).Select("id").Where("user_id = ?", trimmedUserID)
+		if err := transactionDB.Where("session_id IN (?)", sessionIDSubQuery).Delete(&models.RefreshToken{}).Error; err != nil {
+			return err
+		}
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.Session{}).Error; err != nil {
+			return err
+		}
+		if err := transactionDB.Where("user_id = ?", trimmedUserID).Delete(&models.PasswordReset{}).Error; err != nil {
+			return err
+		}
+
+		return transactionDB.Where("id = ?", trimmedUserID).Delete(&models.User{}).Error
 	})
 }
 

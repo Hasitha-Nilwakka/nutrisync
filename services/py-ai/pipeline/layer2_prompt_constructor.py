@@ -59,35 +59,39 @@ def select_prompt_strategy(
 
 
 def build_few_shot_examples_block() -> str:
-    """Return compact anonymized JSON examples demonstrating safe schema-compliant output."""
+    """Return a structural JSON template example without fake numbers that small models might copy."""
     example_output = {
         "health_status_analysis": (
-            "BMI is 24.2 (Normal) with a Wellness Score of 76.5/100 driven by consistent hydration "
-            "and moderate weekly activity."
+            "Current BMI is <exact_bmi> (<exact_bmi_classification>) with a composite Wellness Score "
+            "of <exact_wellness_score>/100, supported by sleep and hydration habits."
         ),
         "progress_evaluation": (
-            "7-day weight trend is steady (-0.25 kg over 7 days) toward the fat_loss target."
+            "7-day weight change is <exact_delta_7d_kg> kg with <exact_sessions_7d> activity sessions "
+            "logged toward the <exact_primary_goal> goal."
         ),
         "recommendations": [
             {
-                "title": "Add Zone-2 Brisk Walking",
+                "title": "Add Low-Impact Zone-2 Cardio",
                 "category": "activity",
                 "priority": "high",
-                "action": "Complete two 30-minute low-impact brisk walks this week.",
-                "expected_impact": "Supports steady weekly energy expenditure without joint overload.",
+                "action": "Complete two 30-minute brisk walks this week to build weekly consistency.",
+                "expected_impact": "Improves cardiovascular endurance and weekly activity score.",
             },
             {
-                "title": "Prioritize Plant-Based Protein",
+                "title": "Prioritize Balanced Whole-Food Meals",
                 "category": "nutrition",
                 "priority": "medium",
-                "action": "Include lentils or chickpeas at lunch while avoiding all restricted allergens.",
-                "expected_impact": "Improves satiety and recovery toward target body weight.",
+                "action": "Pair lean plant or whole-food protein with fiber at lunch while avoiding all restricted allergens.",
+                "expected_impact": "Supports steady energy and progress toward your primary goal.",
             },
         ],
-        "weekly_summary": "Steady 7-day adherence with room to add one low-impact cardio session.",
-        "monthly_summary": "30-day trajectory remains aligned with gradual, sustainable progress.",
+        "weekly_summary": "Consistent 7-day habits with opportunity to add one structured activity session.",
+        "monthly_summary": "30-day trajectory remains aligned with sustainable progress toward <exact_primary_goal>.",
     }
-    return "Example JSON Response:\n" + json.dumps(example_output, separators=(",", ":"))
+    return (
+        "Example JSON Response:\n"
+        + json.dumps(example_output, separators=(",", ":"))
+    )
 
 
 def format_compacted_metrics_summary(
@@ -149,13 +153,22 @@ def construct_llama_prompt_payload(
         layer1_result=layer1_result,
     )
 
+    primary_goal = user_metrics.target_state.primary_goal or "general_wellness"
+    grounding_instruction = (
+        f"IMPORTANT: You MUST cite the user's exact BMI ({wellness_result.bmi:.1f}, "
+        f"{wellness_result.bmi_classification}), exact Wellness Score ({wellness_result.wellness_score:.1f}/100), "
+        f"and exact primary_goal ('{primary_goal}'). Never output '<...>' placeholders or invented numbers."
+    )
+
     if strategy == "few_shot":
         user_prompt = (
             f"{build_few_shot_examples_block()}\n\n"
+            f"{grounding_instruction}\n"
             f"Analyze the following anonymized health context and return ONLY valid JSON:\n{metrics_json}"
         )
     else:
         user_prompt = (
+            f"{grounding_instruction}\n"
             f"Analyze the following anonymized health context and return ONLY valid JSON:\n{metrics_json}"
         )
 

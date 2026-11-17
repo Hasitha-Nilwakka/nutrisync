@@ -109,6 +109,7 @@ def invoke_llama_completion_endpoint(
             "model": config.model,
             "messages": constructed_prompt.messages,
             "temperature": 0.2,
+            "max_tokens": 768,
         }
 
     try:
@@ -240,17 +241,66 @@ def _build_safe_goal_aligned_recommendation(
     )
 
 
+def _contains_hallucinated_or_copied_metrics(
+    text: str,
+    wellness_result: Optional[WellnessCalculationResult],
+) -> bool:
+    """Return True if text copies few-shot placeholders/numbers or contradicts deterministic BMI/Wellness Score."""
+    if not text or not text.strip():
+        return True
+    if "<exact_" in text or "24.2" in text and (wellness_result is None or round(wellness_result.bmi, 1) != 24.2):
+        return True
+    if wellness_result is None:
+        return False
+
+    expected_bmi_1d = f"{wellness_result.bmi:.1f}"
+    expected_bmi_2d = f"{wellness_result.bmi:.2f}"
+    expected_score_1d = f"{wellness_result.wellness_score:.1f}"
+    expected_score_2d = f"{wellness_result.wellness_score:.2f}"
+    expected_score_int = str(int(round(wellness_result.wellness_score)))
+
+    bmi_matches = re.findall(r"(?i)bmi(?:\s+is|\s+of|:)?\s*(\d+(?:\.\d+)?)", text)
+    for matched_bmi in bmi_matches:
+        try:
+            if abs(float(matched_bmi) - wellness_result.bmi) > 0.5:
+                return True
+        except ValueError:
+            return True
+
+    score_matches = re.findall(r"(?i)wellness\s+score(?:\s+is|\s+of|:)?\s*(\d+(?:\.\d+)?)", text)
+    for matched_score in score_matches:
+        try:
+            if abs(float(matched_score) - wellness_result.wellness_score) > 1.0:
+                return True
+        except ValueError:
+            return True
+
+    has_expected_bmi = expected_bmi_1d in text or expected_bmi_2d in text
+    has_expected_score = (
+        expected_score_1d in text or expected_score_2d in text or f"{expected_score_int}/100" in text
+    )
+    if bmi_matches and not has_expected_bmi:
+        return True
+    if score_matches and not has_expected_score:
+        return True
+    return False
+
+
 def filter_and_sanitize_insights_against_guardrails(
     insights: PyAIInsightsPayload,
     layer1_result: Layer1ClinicalExtractionResult,
     primary_goal: str,
+    wellness_result: Optional[WellnessCalculationResult] = None,
+    compacted_trends: Optional[Dict[str, Any]] = None,
 ) -> PyAIInsightsPayload:
-    """Enforce Layer 1 forbidden-term filtering and goal alignment on LLM insights."""
+    """Enforce Layer 1 forbidden-term filtering, numeric BMI/score grounding, and goal alignment on LLM insights."""
     forbidden_terms = layer1_result.forbidden_terms
     safe_recommendations: List[PrioritizedAIRecommendation] = []
 
     for rec in insights.recommendations:
         combined_rec_text = f"{rec.title} {rec.category} {rec.action} {rec.expected_impact}"
+        if "<exact_" in combined_rec_text:
+            continue
         if find_matching_forbidden_term(combined_rec_text, forbidden_terms) is None:
             safe_recommendations.append(rec)
 
@@ -259,13 +309,47 @@ def filter_and_sanitize_insights_against_guardrails(
             _build_safe_goal_aligned_recommendation(primary_goal=primary_goal, layer1_result=layer1_result)
         )
 
+    health_status = _sanitize_narrative_text(insights.health_status_analysis, forbidden_terms)
+    progress_eval = _sanitize_narrative_text(insights.progress_evaluation, forbidden_terms)
+    weekly_summary = _sanitize_narrative_text(insights.weekly_summary, forbidden_terms)
+    monthly_summary = _sanitize_narrative_text(insights.monthly_summary, forbidden_terms)
+
+    normalized_goal = (primary_goal or "general_wellness").strip()
+    readable_goal = normalized_goal.replace("_", " ")
+
+    if wellness_result is not None and _contains_hallucinated_or_copied_metrics(health_status, wellness_result):
+        health_status = (
+            f"Current BMI is {wellness_result.bmi:.1f} ({wellness_result.bmi_classification}) with an "
+            f"overall Wellness Score of {wellness_result.wellness_score:.1f}/100 (BMI Score "
+            f"{wellness_result.bmi_score:.0f}, Activity {wellness_result.activity_score:.0f}, "
+            f"Progress {wellness_result.progress_score:.0f}, Habits {wellness_result.habits_score:.0f})."
+        )
+
+    if wellness_result is not None and (
+        "<exact_" in progress_eval
+        or ("fat_loss" in progress_eval and "fat_loss" not in normalized_goal.lower())
+        or _contains_hallucinated_or_copied_metrics(progress_eval, wellness_result)
+    ):
+        weight_trends = (compacted_trends or {}).get("weight_trends", {})
+        activity_trends = (compacted_trends or {}).get("activity_trends", {})
+        delta_7d = weight_trends.get("delta_7d_kg", 0.0) if isinstance(weight_trends, dict) else 0.0
+        sessions_7d = activity_trends.get("sessions_7d", 0) if isinstance(activity_trends, dict) else 0
+        minutes_7d = activity_trends.get("minutes_7d", 0) if isinstance(activity_trends, dict) else 0
+        progress_eval = (
+            f"7-day weight delta is {delta_7d:+.2f} kg with {sessions_7d} logged activity sessions "
+            f"({minutes_7d} total minutes) aligned toward your {readable_goal} goal."
+        )
+
+    if "<exact_" in monthly_summary:
+        monthly_summary = monthly_summary.replace("<exact_primary_goal>", readable_goal)
+
     return PyAIInsightsPayload(
         prompt_strategy=insights.prompt_strategy,
-        health_status_analysis=_sanitize_narrative_text(insights.health_status_analysis, forbidden_terms),
-        progress_evaluation=_sanitize_narrative_text(insights.progress_evaluation, forbidden_terms),
+        health_status_analysis=health_status,
+        progress_evaluation=progress_eval,
         recommendations=safe_recommendations,
-        weekly_summary=_sanitize_narrative_text(insights.weekly_summary, forbidden_terms),
-        monthly_summary=_sanitize_narrative_text(insights.monthly_summary, forbidden_terms),
+        weekly_summary=weekly_summary,
+        monthly_summary=monthly_summary,
     )
 
 
@@ -364,6 +448,8 @@ def generate_validated_ai_insights(
                 insights=parsed_insights,
                 layer1_result=layer1_result,
                 primary_goal=user_metrics.target_state.primary_goal,
+                wellness_result=wellness_result,
+                compacted_trends=compacted_trends,
             )
 
     return build_deterministic_clinical_fallback_insights(

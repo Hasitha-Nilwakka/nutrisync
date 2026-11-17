@@ -8,7 +8,7 @@ import { Spinner } from "@/components/ui/spinner"
 
 // GithubAuthButton initiates the GitHub OAuth 2.0 flow via top-level navigation to /api/auth/oauth/github
 // (rewritten by Next.js to the Go API server).
-export default function GithubAuthButton() {
+export default function GithubAuthButton({ disabled = false }: { disabled?: boolean }) {
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   const handleGitHubSignIn = () => {
@@ -21,7 +21,7 @@ export default function GithubAuthButton() {
       type="button"
       variant="outline"
       className="h-10 w-full gap-2.5 rounded-lg border-border/80 bg-background font-medium shadow-2xs transition-all hover:border-border hover:bg-muted/70"
-      disabled={isRedirecting}
+      disabled={disabled || isRedirecting}
       onClick={handleGitHubSignIn}
     >
       {isRedirecting ? (

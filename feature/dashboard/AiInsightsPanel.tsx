@@ -2,7 +2,7 @@
 // prioritized recommendations, weekly/monthly summaries), service/fallback status, and regeneration trigger.
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import axios from "axios"
 import {
   AlertTriangle,
@@ -66,7 +66,9 @@ export function AiInsightsPanel({
   onInsightsRegenerated,
 }: AiInsightsPanelProps) {
   const [isRegenerating, setIsRegenerating] = useState(false)
+  const [isWakingAi, setIsWakingAi] = useState(false)
   const [selectedInsightId, setSelectedInsightId] = useState<string | null>(null)
+  const hasAttemptedWakeRef = useRef(false)
 
   const orderedHistory = [...insightHistory].sort((a, b) => b.version - a.version)
   const activeInsight =
@@ -75,7 +77,7 @@ export function AiInsightsPanel({
     orderedHistory[0] ??
     null
 
-  const handleRegenerate = async () => {
+  const handleRegenerate = useCallback(async () => {
     setIsRegenerating(true)
     try {
       const response = await axios.post<RegenerateAIInsightsPayload>(
@@ -108,7 +110,39 @@ export function AiInsightsPanel({
     } finally {
       setIsRegenerating(false)
     }
-  }
+  }, [onInsightsRegenerated])
+
+  useEffect(() => {
+    if (!allowAiProcessing || (aiServiceAvailable && !isCachedFallback) || hasAttemptedWakeRef.current) {
+      return
+    }
+    hasAttemptedWakeRef.current = true
+
+    let isCancelled = false
+    const wakeAndRefresh = async () => {
+      setIsWakingAi(true)
+      try {
+        const wakeResponse = await axios.get<{ awake: boolean }>("/api/ai-wake", {
+          timeout: 65_000,
+        })
+        if (!isCancelled && wakeResponse.data?.awake) {
+          setIsWakingAi(false)
+          await handleRegenerate()
+          return
+        }
+      } catch {
+        // Ignore wake errors; panel will remain in cached/offline state.
+      }
+      if (!isCancelled) {
+        setIsWakingAi(false)
+      }
+    }
+
+    void wakeAndRefresh()
+    return () => {
+      isCancelled = true
+    }
+  }, [allowAiProcessing, aiServiceAvailable, isCachedFallback, handleRegenerate])
 
   const recommendations = activeInsight
     ? sortRecommendationsByPriority(parseRecommendationsJson(activeInsight.recommendationsJson))
@@ -121,7 +155,12 @@ export function AiInsightsPanel({
           <div className="flex flex-wrap items-center gap-2">
             <BrainCircuit className="size-5 text-primary" />
             <h2 className="text-lg font-semibold tracking-tight">AI Health Insights</h2>
-            {isCachedFallback ? (
+            {isWakingAi ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 text-xs font-medium text-sky-700 dark:text-sky-300">
+                <Loader2 className="size-3 animate-spin" />
+                Waking AI Service...
+              </span>
+            ) : isCachedFallback ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
                 <AlertTriangle className="size-3" />
                 Cached Fallback
@@ -165,18 +204,28 @@ export function AiInsightsPanel({
           <Button
             type="button"
             size="sm"
-            disabled={isRegenerating || !allowAiProcessing}
+            disabled={isRegenerating || isWakingAi || !allowAiProcessing}
             onClick={handleRegenerate}
           >
-            {isRegenerating ? (
+            {isRegenerating || isWakingAi ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <RefreshCw className="size-4" />
             )}
-            <span>{isRegenerating ? "Regenerating..." : "Regenerate Insights"}</span>
+            <span>{isWakingAi ? "Waking AI..." : isRegenerating ? "Regenerating..." : "Regenerate Insights"}</span>
           </Button>
         </div>
       </div>
+
+      {isWakingAi && (
+        <div className="flex items-center gap-3 rounded-lg border border-sky-500/30 bg-sky-500/10 p-3.5 text-xs text-sky-800 dark:text-sky-200">
+          <Loader2 className="size-4 shrink-0 animate-spin" />
+          <span>
+            The AI engine is hosted on a free plan and sleeps when idle. Waking it up now—this may take up to{" "}
+            <strong>1 minute</strong>. Fresh insights will load automatically once it&apos;s ready.
+          </span>
+        </div>
+      )}
 
       {!allowAiProcessing && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-800 dark:text-amber-200">

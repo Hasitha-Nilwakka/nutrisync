@@ -9,6 +9,22 @@ import GoogleAuthButton from "@/feature/auth/GoogleAuthButton"
 import LoginForm from "@/feature/auth/login/login"
 import RegistrationForm from "@/feature/auth/register/Register"
 
+// Shared OAuth provider buttons with a temporary-disabled notice for free-tier hosting.
+function OAuthProvidersSection() {
+  return (
+    <div className="pt-2">
+      <FieldSeparator>Or continue with</FieldSeparator>
+      <div className="mt-5 flex flex-col gap-2.5">
+        <GoogleAuthButton disabled />
+        <GithubAuthButton disabled />
+      </div>
+      <p className="mt-3 text-center text-xs text-muted-foreground">
+        Google &amp; GitHub OAuth sign-in is temporarily disabled due to hosting limitations. Please use email and password.
+      </p>
+    </div>
+  )
+}
+
 // AuthTabs renders a unified card with Tabs for switching between Login and Register forms,
 // including shared "Continue with Google" and "Continue with GitHub" options in each tab panel.
 export default function AuthTabs() {
@@ -37,24 +53,12 @@ export default function AuthTabs() {
 
           <TabsContent value="login" className="w-full space-y-5">
             <LoginForm />
-            <div className="pt-2">
-              <FieldSeparator>Or continue with</FieldSeparator>
-              <div className="mt-5 flex flex-col gap-2.5">
-                <GoogleAuthButton />
-                <GithubAuthButton />
-              </div>
-            </div>
+            <OAuthProvidersSection />
           </TabsContent>
 
           <TabsContent value="register" className="w-full space-y-5">
             <RegistrationForm />
-            <div className="pt-2">
-              <FieldSeparator>Or continue with</FieldSeparator>
-              <div className="mt-5 flex flex-col gap-2.5">
-                <GoogleAuthButton />
-                <GithubAuthButton />
-              </div>
-            </div>
+            <OAuthProvidersSection />
           </TabsContent>
         </Tabs>
       </div>

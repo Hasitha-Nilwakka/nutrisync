@@ -20,7 +20,7 @@ const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 
 // GoogleAuthButton initiates the Google OAuth 2.0 flow via top-level navigation to /api/auth/oauth/google
 // (rewritten by Next.js to the Go API server) and surfaces any OAuth callback redirect errors.
-export default function GoogleAuthButton() {
+export default function GoogleAuthButton({ disabled = false }: { disabled?: boolean }) {
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function GoogleAuthButton() {
       type="button"
       variant="outline"
       className="h-10 w-full gap-2.5 rounded-lg border-border/80 bg-background font-medium shadow-2xs transition-all hover:border-border hover:bg-muted/70"
-      disabled={isRedirecting}
+      disabled={disabled || isRedirecting}
       onClick={handleGoogleSignIn}
     >
       {isRedirecting ? (

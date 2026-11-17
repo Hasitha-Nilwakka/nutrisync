@@ -22,7 +22,7 @@ import (
 const (
 	anonymizedSubjectIDSaltPrefix = "nutrisync-anon:"
 	defaultPyAIServiceBaseURL     = "http://localhost:8000"
-	defaultPyAIHTTPTimeout        = 15 * time.Second
+	defaultPyAIHTTPTimeout        = 65 * time.Second
 )
 
 // AnonymizedCurrentState represents the user's current physical and lifestyle metrics stripped of PII.

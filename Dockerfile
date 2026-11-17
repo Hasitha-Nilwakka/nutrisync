@@ -36,23 +36,20 @@ WORKDIR /app
 # Copy installed dependencies
 COPY --from=dependencies /app/node_modules ./node_modules
 
-# Copy application source, including prisma/schema.prisma
+# Copy application source
 COPY . .
 
 ENV NODE_ENV=production
+ARG GO_API_URL=http://go-api:8080
+ENV GO_API_URL=${GO_API_URL}
 
-# Allows prisma.config.ts to evaluate env("DATABASE_URL")
-# during the image build without needing a real database.
-# Docker Compose supplies the actual URL at runtime.
-ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/db?schema=public"
-
-# Generate Prisma Client, then build the application.
+# Build the Next.js standalone application.
 RUN if [ -f package-lock.json ]; then \
-      npx prisma generate && npm run build; \
+      npm run build; \
     elif [ -f yarn.lock ]; then \
-      corepack enable yarn && yarn prisma generate && yarn build; \
+      corepack enable yarn && yarn build; \
     elif [ -f pnpm-lock.yaml ]; then \
-      corepack enable pnpm && pnpm exec prisma generate && pnpm build; \
+      corepack enable pnpm && pnpm build; \
     else \
       echo "No lockfile found." && exit 1; \
     fi

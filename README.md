@@ -30,11 +30,25 @@
 
 ---
 
-## Method 1: Start Using Docker Compose (Recommended for Users / Full-Stack Evaluators)
+## Method 1: Start Using Docker Compose (Recommended for Reviewers / Full-Stack Evaluators)
 
 Docker Compose starts **PostgreSQL (`:5432`)**, **Go Core API (`:8080`)**, **Python AI Service (`:8000`)**, and the **Next.js Web Server (`:3000`)** in a single command.
 
-### 1. (Optional) Start the Local LLM Server on Host
+### Quick Start — Reviewer One-Command Launch Script
+Run the automated Docker launch script from the repository root (automatically initializes `.env` from `.env.example` if missing, checks optional host Ollama model wiring, and builds/starts all 4 containers):
+```bash
+./scripts/start-docker.sh
+```
+Additional flags:
+```bash
+./scripts/start-docker.sh --detach     # Start in detached background mode and poll health checks
+./scripts/start-docker.sh --no-build   # Start existing containers without rebuilding images
+./scripts/start-docker.sh --down       # Stop and remove containers
+```
+
+### Manual Docker Compose Procedure
+
+#### 1. (Optional) Start the Local LLM Server on Host
 If you want live LLM inference (instead of the built-in deterministic clinical fallback), start **Ollama** on your host machine first so the `py-ai` container can reach it via `host.docker.internal:11434`:
 ```bash
 ollama serve &
@@ -43,7 +57,7 @@ ollama create nutrisync-llama -f services/py-ai/training/Modelfile
 ```
 *(Note: If Ollama is not running, NutriSync still works 100% end-to-end—Layer 3 automatically falls back to its deterministic clinical insight engine.)*
 
-### 2. Build and Start All Containers
+#### 2. Build and Start All Containers
 From the repository root:
 ```bash
 docker compose up --build
@@ -53,7 +67,7 @@ Or run in detached background mode:
 docker compose up -d --build
 ```
 
-### 3. Access the Application
+#### 3. Access the Application
 - **Web App (Next.js):** [http://localhost:3000](http://localhost:3000)
 - **Go Core API Health Check:** [http://localhost:8080/health](http://localhost:8080/health)
 - **Python AI Service Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
@@ -67,10 +81,25 @@ docker compose down
 
 ## Method 2: Start in Local Development Environment (Hot-Reload Across All 3 Services)
 
-In local development, run PostgreSQL in Docker and run **Go API**, **Python AI**, and **Next.js** natively in separate terminals for instant hot-reload and Apple Silicon GPU access.
+In local development, run PostgreSQL in Docker (`:5432`) and run **Python AI (`:8000`)**, **Go API (`:8080`)**, and **Next.js (`:3000`)** natively on the host for instant hot-reload and Apple Silicon GPU access.
 
-### Terminal 1 — Start PostgreSQL Database (`:5432`)
-Start only the `db` container from `compose.yaml` (and make sure port `5432` is exposed or running locally):
+### Quick Start — One-Command Local Dev Launch Script
+Run the unified local development script from the repository root (starts PostgreSQL in Docker, ensures `node_modules` and `services/py-ai/.venv` are installed, auto-detects MLX/Ollama/Fallback LLM mode, launches all 3 services with health-check polling, and cleanly stops all processes on `Ctrl+C`):
+```bash
+./scripts/start-local-dev.sh
+```
+Optional flags:
+```bash
+./scripts/start-local-dev.sh --llm=mlx        # Also start Apple Silicon MLX LoRA server on :11435
+./scripts/start-local-dev.sh --llm=ollama     # Connect to local Ollama server on :11434
+./scripts/start-local-dev.sh --llm=fallback   # Force Layer 3 deterministic clinical fallback
+./scripts/start-local-dev.sh --stop-db        # Also stop the PostgreSQL container on Ctrl+C
+```
+
+### Manual Multi-Terminal Procedure
+
+#### Terminal 1 — Start PostgreSQL Database (`:5432`)
+Start only the `db` container from `compose.yaml` (exposes port `5432` to the host):
 ```bash
 docker compose up -d db
 ```
